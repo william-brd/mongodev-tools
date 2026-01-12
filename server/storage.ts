@@ -1,38 +1,54 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { db } from "./db";
+import { scripts, executions, type InsertScript, type InsertExecution, type Script, type Execution } from "@shared/schema";
+import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getScripts(): Promise<Script[]>;
+  getScript(id: number): Promise<Script | undefined>;
+  createScript(script: InsertScript): Promise<Script>;
+  updateScript(id: number, script: Partial<InsertScript>): Promise<Script>;
+  deleteScript(id: number): Promise<void>;
+  
+  getExecutions(): Promise<Execution[]>;
+  logExecution(execution: InsertExecution): Promise<Execution>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+export class DatabaseStorage implements IStorage {
+  async getScripts(): Promise<Script[]> {
+    return await db.select().from(scripts).orderBy(desc(scripts.createdAt));
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async getScript(id: number): Promise<Script | undefined> {
+    const [script] = await db.select().from(scripts).where(eq(scripts.id, id));
+    return script;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async createScript(insertScript: InsertScript): Promise<Script> {
+    const [script] = await db.insert(scripts).values(insertScript).returning();
+    return script;
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async updateScript(id: number, updates: Partial<InsertScript>): Promise<Script> {
+    const [script] = await db
+      .update(scripts)
+      .set(updates)
+      .where(eq(scripts.id, id))
+      .returning();
+    return script;
+  }
+
+  async deleteScript(id: number): Promise<void> {
+    await db.delete(scripts).where(eq(scripts.id, id));
+  }
+
+  async getExecutions(): Promise<Execution[]> {
+    return await db.select().from(executions).orderBy(desc(executions.executedAt)).limit(50);
+  }
+
+  async logExecution(insertExecution: InsertExecution): Promise<Execution> {
+    const [execution] = await db.insert(executions).values(insertExecution).returning();
+    return execution;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
