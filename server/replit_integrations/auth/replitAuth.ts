@@ -8,15 +8,19 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
 
-const getOidcConfig = memoize(
-  async () => {
-    return await client.discovery(
-      new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
-      process.env.REPL_ID!
-    );
-  },
-  { maxAge: 3600 * 1000 }
-);
+  const getOidcConfig = memoize(
+    async () => {
+      const replId = process.env.REPL_ID;
+      if (!replId) {
+        console.warn("REPL_ID is not set. Using a fallback for local development.");
+      }
+      return await client.discovery(
+        new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
+        replId || "fallback-id"
+      );
+    },
+    { maxAge: 3600 * 1000 }
+  );
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
@@ -122,7 +126,7 @@ export async function setupAuth(app: Express) {
     req.logout(() => {
       res.redirect(
         client.buildEndSessionUrl(config, {
-          client_id: process.env.REPL_ID!,
+          client_id: process.env.REPL_ID || "fallback-id",
           post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
         }).href
       );
