@@ -61,9 +61,9 @@ function AuthenticatedRoute({ component: Component }: { component: React.Compone
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={() => <AuthenticatedRoute component={Dashboard} />} />
-      <Route path="/scripts" component={() => <AuthenticatedRoute component={ScriptsList} />} />
-      <Route path="/history" component={() => <AuthenticatedRoute component={History} />} />
+      <Route path="/" component={Dashboard} />
+      <Route path="/scripts" component={ScriptsList} />
+      <Route path="/history" component={History} />
       <Route component={NotFound} />
     </Switch>
   );
