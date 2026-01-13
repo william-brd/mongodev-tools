@@ -10,9 +10,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Setup Auth
-  await setupAuth(app);
-  registerAuthRoutes(app);
+  // Setup Auth (Disabled)
+  // await setupAuth(app);
+  // registerAuthRoutes(app);
 
   // Scripts CRUD
   app.get(api.scripts.list.path, async (req, res) => {
@@ -27,7 +27,7 @@ export async function registerRoutes(
   });
 
   app.post(api.scripts.create.path, async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
+    // if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const input = api.scripts.create.input.parse(req.body);
       const script = await storage.createScript(input);
@@ -40,20 +40,20 @@ export async function registerRoutes(
   });
 
   app.put(api.scripts.update.path, async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
+    // if (!req.isAuthenticated()) return res.sendStatus(401);
     const script = await storage.updateScript(Number(req.params.id), req.body);
     res.json(script);
   });
 
   app.delete(api.scripts.delete.path, async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
+    // if (!req.isAuthenticated()) return res.sendStatus(401);
     await storage.deleteScript(Number(req.params.id));
     res.sendStatus(204);
   });
 
   // Execution
   app.post(api.scripts.execute.path, async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
+    // if (!req.isAuthenticated()) return res.sendStatus(401);
     
     const start = Date.now();
     try {
