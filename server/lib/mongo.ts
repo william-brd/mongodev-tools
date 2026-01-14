@@ -28,20 +28,68 @@ export async function executeMongoScript(
       finalCode = finalCode.slice(0, -1);
     }
 
-    // Wrap in a function that provides 'db' and executes the code
-    const fn = new Function(
-      "db",
-      `return (async () => {
-      const result = await (${finalCode});
-      if (result && typeof result.toArray === 'function') {
-        return await result.toArray();
+    // Helper function to handle various MongoDB return types
+    const handleResult = async (res: any) => {
+      if (res && typeof res.toArray === "function") {
+        return await res.toArray();
       }
-      return result;
-    })()`
+      if (
+        res &&
+        typeof res.next === "function" &&
+        typeof res.hasNext === "function"
+      ) {
+        const results = [];
+        while (await res.hasNext()) {
+          results.push(await res.next());
+        }
+        return results;
+      }
+      return res;
+    };
+
+    // Use a direct approach to execute the code
+    const execute = new Function(
+      "db",
+      "handleResult",
+      `
+      return (async () => {
+        // Basic mapping for common shell methods not present in Node.js driver
+        const mongoContext = {
+          db: {
+            getSiblingDB: (dbName) => db.client.db(dbName),
+            getCollection: (name) => db.collection(name),
+            adminCommand: (cmd) => db.admin().command(cmd),
+            serverStatus: () => db.admin().serverStatus(),
+          },
+          // Collection proxy
+          collection: (name) => db.collection(name)
+        };
+
+        const dbProxy = mongoContext.db;
+        let codeToRun = "${finalCode}";
+        
+        // More robust replacement for db. usage
+        if (codeToRun.includes('db.')) {
+           // We use a more direct approach: providing dbProxy as 'db' in the eval scope
+           const result = await (async (db) => {
+              return await eval(codeToRun);
+           })(dbProxy);
+           return await handleResult(result);
+        }
+
+        if (!codeToRun.startsWith('db.')) {
+          codeToRun = 'db.' + codeToRun;
+        }
+        
+        const result = await eval(codeToRun);
+        return await handleResult(result);
+      })()
+    `
     );
 
-    return await fn(db);
+    return await execute(db, handleResult);
   } catch (error: any) {
-    throw new Error(`Execution failed: ${error.message}`);
+    console.error("Mongo execution error:", error);
+    throw new Error(error.message);
   }
 }
