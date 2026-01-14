@@ -54,7 +54,7 @@ export async function registerRoutes(
   // Execution
   app.post(api.scripts.execute.path, async (req, res) => {
     // if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     const start = Date.now();
     try {
       const { code, type } = req.body;
@@ -83,7 +83,13 @@ export async function registerRoutes(
   });
 
   app.get(api.executions.list.path, async (req, res) => {
-    const executions = await storage.getExecutions();
+    const limit = Number(req.query.limit ?? "10");
+    const offset = Number(req.query.offset ?? "0");
+    const safeLimit = Number.isNaN(limit)
+      ? 10
+      : Math.min(Math.max(limit, 1), 100);
+    const safeOffset = Number.isNaN(offset) ? 0 : Math.max(offset, 0);
+    const executions = await storage.getExecutions(safeLimit, safeOffset);
     res.json(executions);
   });
 

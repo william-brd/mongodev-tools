@@ -1,5 +1,12 @@
 import { db } from "./db";
-import { scripts, executions, type InsertScript, type InsertExecution, type Script, type Execution } from "@shared/schema";
+import {
+  scripts,
+  executions,
+  type InsertScript,
+  type InsertExecution,
+  type Script,
+  type Execution,
+} from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
@@ -8,8 +15,8 @@ export interface IStorage {
   createScript(script: InsertScript): Promise<Script>;
   updateScript(id: number, script: Partial<InsertScript>): Promise<Script>;
   deleteScript(id: number): Promise<void>;
-  
-  getExecutions(): Promise<Execution[]>;
+
+  getExecutions(limit?: number, offset?: number): Promise<Execution[]>;
   logExecution(execution: InsertExecution): Promise<Execution>;
 }
 
@@ -28,7 +35,10 @@ export class DatabaseStorage implements IStorage {
     return script;
   }
 
-  async updateScript(id: number, updates: Partial<InsertScript>): Promise<Script> {
+  async updateScript(
+    id: number,
+    updates: Partial<InsertScript>
+  ): Promise<Script> {
     const [script] = await db
       .update(scripts)
       .set(updates)
@@ -41,12 +51,20 @@ export class DatabaseStorage implements IStorage {
     await db.delete(scripts).where(eq(scripts.id, id));
   }
 
-  async getExecutions(): Promise<Execution[]> {
-    return await db.select().from(executions).orderBy(desc(executions.executedAt)).limit(50);
+  async getExecutions(limit = 10, offset = 0): Promise<Execution[]> {
+    return await db
+      .select()
+      .from(executions)
+      .orderBy(desc(executions.executedAt))
+      .limit(limit)
+      .offset(offset);
   }
 
   async logExecution(insertExecution: InsertExecution): Promise<Execution> {
-    const [execution] = await db.insert(executions).values(insertExecution).returning();
+    const [execution] = await db
+      .insert(executions)
+      .values(insertExecution)
+      .returning();
     return execution;
   }
 }

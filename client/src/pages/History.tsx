@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useExecutions } from "@/hooks/use-mongo";
 import { format } from "date-fns";
@@ -24,7 +25,15 @@ import { highlight, languages } from "prismjs";
 import "prismjs/themes/prism-tomorrow.css";
 
 export default function History() {
-  const { data: executions, isLoading } = useExecutions();
+  const pageSize = 10;
+  const [visibleCount, setVisibleCount] = useState(pageSize);
+  const { data: executions, isLoading } = useExecutions({
+    limit: visibleCount + 1,
+    offset: 0,
+  });
+
+  const visibleExecutions = executions?.slice(0, visibleCount) ?? [];
+  const hasMore = (executions?.length ?? 0) > visibleCount;
 
   if (isLoading) {
     return (
@@ -40,8 +49,12 @@ export default function History() {
     <Layout>
       <div className="p-8 max-w-7xl mx-auto space-y-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Execution History</h1>
-          <p className="text-muted-foreground">Log of all script executions and their results.</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">
+            Execution History
+          </h1>
+          <p className="text-muted-foreground">
+            Log of all script executions and their results.
+          </p>
         </div>
 
         <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
@@ -58,71 +71,108 @@ export default function History() {
             <TableBody>
               {executions?.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={5}
+                    className="h-32 text-center text-muted-foreground"
+                  >
                     No history yet.
                   </TableCell>
                 </TableRow>
               ) : (
-                executions?.map((exec) => (
-                  <TableRow key={exec.id} className="hover:bg-muted/30 transition-colors">
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {exec.status === 'success' ? (
-                          <CheckCircle2 className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <AlertCircle className="w-4 h-4 text-red-500" />
-                        )}
-                        <span className={exec.status === 'success' ? 'text-green-500' : 'text-red-500 capitalize'}>
-                          {exec.status}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {exec.durationMs}ms
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {exec.executedAt && format(new Date(exec.executedAt), "MMM d, HH:mm:ss")}
-                    </TableCell>
-                    <TableCell className="max-w-[300px] truncate font-mono text-xs text-muted-foreground">
-                      {JSON.stringify(exec.result)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="ghost" size="sm">View Result</Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-3xl max-h-[80vh]">
-                          <DialogHeader>
-                            <DialogTitle className="flex items-center gap-2">
-                              Execution Result
-                              {exec.status === 'success' ? (
-                                <Badge variant="outline" className="text-green-500 border-green-500/20 bg-green-500/10">Success</Badge>
-                              ) : (
-                                <Badge variant="destructive">Error</Badge>
-                              )}
-                            </DialogTitle>
-                          </DialogHeader>
-                          <ScrollArea className="h-[60vh] rounded-md border border-border bg-[#1e1e1e] p-4">
-                            <pre 
-                              className="font-mono text-sm text-green-300"
-                              dangerouslySetInnerHTML={{
-                                __html: highlight(
-                                  JSON.stringify(exec.result, null, 2), 
-                                  languages.json, 
-                                  "json"
-                                )
-                              }} 
-                            />
-                          </ScrollArea>
-                        </DialogContent>
-                      </Dialog>
-                    </TableCell>
-                  </TableRow>
-                ))
+                visibleExecutions.map((exec) => {
+                  const statusBadge =
+                    exec.status === "success" ? (
+                      <Badge
+                        variant="outline"
+                        className="text-green-500 border-green-500/20 bg-green-500/10"
+                      >
+                        Success
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive">Error</Badge>
+                    );
+
+                  return (
+                    <TableRow
+                      key={exec.id}
+                      className="hover:bg-muted/30 transition-colors"
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {exec.status === "success" ? (
+                            <CheckCircle2 className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-red-500" />
+                          )}
+                          <span
+                            className={
+                              exec.status === "success"
+                                ? "text-green-500"
+                                : "text-red-500 capitalize"
+                            }
+                          >
+                            {exec.status}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {exec.durationMs}ms
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {exec.executedAt &&
+                          format(new Date(exec.executedAt), "MMM d, HH:mm:ss")}
+                      </TableCell>
+                      <TableCell className="max-w-[300px] truncate font-mono text-xs text-muted-foreground">
+                        {JSON.stringify(exec.result)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              View Result
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-3xl max-h-[80vh]">
+                            <DialogHeader>
+                              <DialogTitle className="flex items-center gap-2">
+                                Execution Result
+                                {statusBadge}
+                              </DialogTitle>
+                            </DialogHeader>
+                            <ScrollArea className="h-[60vh] rounded-md border border-border bg-[#1e1e1e] p-4">
+                              <pre
+                                className="font-mono text-sm text-green-300"
+                                dangerouslySetInnerHTML={{
+                                  __html: highlight(
+                                    JSON.stringify(exec.result, null, 2),
+                                    languages.json,
+                                    "json"
+                                  ),
+                                }}
+                              />
+                            </ScrollArea>
+                          </DialogContent>
+                        </Dialog>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
         </div>
+        {executions && executions.length > 0 ? (
+          <div className="flex items-center justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setVisibleCount((prev) => prev + pageSize)}
+              disabled={!hasMore}
+            >
+              Load 10 more
+            </Button>
+          </div>
+        ) : null}
       </div>
     </Layout>
   );

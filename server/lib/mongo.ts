@@ -73,24 +73,17 @@ export async function executeMongoScript(
       }
       return res;
     };
-
     const dbProxy = createDbProxy(db, client);
     let codeToRun = finalCode;
     if (!codeToRun.includes("db.")) {
       codeToRun = `db.${codeToRun}`;
     }
 
-    const scriptSource = `
-      (async () => {
-        const __code = ${JSON.stringify(codeToRun)};
-        const __result = await (async (db) => {
-          return await eval(__code);
-        })(db);
-        return await handleResult(__result);
-      })()
-    `;
-
     const context = vm.createContext({ db: dbProxy, handleResult });
+    const scriptSource =
+      "(async () => { const __result = await (async () => (" +
+      codeToRun +
+      "))(); return await handleResult(__result); })()";
     const script = new vm.Script(scriptSource, { filename: "mongo-script.js" });
     return await script.runInContext(context);
   } catch (error: any) {

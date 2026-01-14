@@ -7,7 +7,9 @@ export function useScripts() {
   return useQuery({
     queryKey: [api.scripts.list.path],
     queryFn: async () => {
-      const res = await fetch(api.scripts.list.path, { credentials: "include" });
+      const res = await fetch(api.scripts.list.path, {
+        credentials: "include",
+      });
       if (!res.ok) throw new Error("Failed to fetch scripts");
       return api.scripts.list.responses[200].parse(await res.json());
     },
@@ -48,7 +50,11 @@ export function useCreateScript() {
       toast({ title: "Success", description: "Script saved successfully" });
     },
     onError: (error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -58,7 +64,10 @@ export function useUpdateScript() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id: number } & Partial<InsertScript>) => {
+    mutationFn: async ({
+      id,
+      ...data
+    }: { id: number } & Partial<InsertScript>) => {
       const url = buildUrl(api.scripts.update.path, { id });
       const res = await fetch(url, {
         method: "PUT",
@@ -74,7 +83,11 @@ export function useUpdateScript() {
       toast({ title: "Success", description: "Script updated successfully" });
     },
     onError: (error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -86,7 +99,10 @@ export function useDeleteScript() {
   return useMutation({
     mutationFn: async (id: number) => {
       const url = buildUrl(api.scripts.delete.path, { id });
-      const res = await fetch(url, { method: "DELETE", credentials: "include" });
+      const res = await fetch(url, {
+        method: "DELETE",
+        credentials: "include",
+      });
       if (!res.ok) throw new Error("Failed to delete script");
     },
     onSuccess: () => {
@@ -94,7 +110,11 @@ export function useDeleteScript() {
       toast({ title: "Success", description: "Script deleted" });
     },
     onError: (error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -104,35 +124,46 @@ export function useExecuteScript() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (data: { code: string; type: "query" | "aggregation" }) => {
+    mutationFn: async (data: {
+      code: string;
+      type: "query" | "aggregation";
+    }) => {
       const res = await fetch(api.scripts.execute.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
         credentials: "include",
       });
-      
+
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.message || "Execution failed");
       }
-      
+
       return api.scripts.execute.responses[200].parse(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.executions.list.path] });
     },
     onError: (error) => {
-      toast({ title: "Execution Failed", description: error.message, variant: "destructive" });
+      toast({
+        title: "Execution Failed",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
 
-export function useExecutions() {
+export function useExecutions(params?: { limit?: number; offset?: number }) {
+  const limit = params?.limit ?? 10;
+  const offset = params?.offset ?? 0;
+
   return useQuery({
-    queryKey: [api.executions.list.path],
+    queryKey: [api.executions.list.path, limit, offset],
     queryFn: async () => {
-      const res = await fetch(api.executions.list.path, { credentials: "include" });
+      const url = `${api.executions.list.path}?limit=${limit}&offset=${offset}`;
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch executions");
       return api.executions.list.responses[200].parse(await res.json());
     },
