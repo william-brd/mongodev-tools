@@ -87,7 +87,7 @@ export async function registerRoutes(
     const offset = Number(req.query.offset ?? "0");
     const safeLimit = Number.isNaN(limit)
       ? 10
-      : Math.min(Math.max(limit, 1), 100);
+      : Math.min(Math.max(limit, 1), 10);
     const safeOffset = Number.isNaN(offset) ? 0 : Math.max(offset, 0);
     const executions = await storage.getExecutions(safeLimit, safeOffset);
     res.json(executions);

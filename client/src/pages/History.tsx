@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useExecutions } from "@/hooks/use-mongo";
 import { format } from "date-fns";
+import type { Execution } from "@shared/schema";
 import {
   Table,
   TableBody,
@@ -26,16 +27,26 @@ import "prismjs/themes/prism-tomorrow.css";
 
 export default function History() {
   const pageSize = 10;
-  const [visibleCount, setVisibleCount] = useState(pageSize);
-  const { data: executions, isLoading } = useExecutions({
-    limit: visibleCount + 1,
-    offset: 0,
+  const [offset, setOffset] = useState(0);
+  const [executions, setExecutions] = useState<Execution[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const {
+    data: executionsQueryData,
+    isLoading,
+    isFetching,
+  } = useExecutions({
+    limit: pageSize,
+    offset,
   });
 
-  const visibleExecutions = executions?.slice(0, visibleCount) ?? [];
-  const hasMore = (executions?.length ?? 0) > visibleCount;
+  useEffect(() => {
+    if (!executionsQueryData) return;
+    const nextPage = executionsQueryData.slice(0, pageSize);
+    setHasMore(executionsQueryData.length === pageSize);
+    setExecutions((prev) => (offset === 0 ? nextPage : [...prev, ...nextPage]));
+  }, [executionsQueryData, offset]);
 
-  if (isLoading) {
+  if (isLoading && executions.length === 0) {
     return (
       <Layout>
         <div className="h-full flex items-center justify-center">
@@ -69,7 +80,7 @@ export default function History() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {executions?.length === 0 ? (
+              {executions.length === 0 ? (
                 <TableRow>
                   <TableCell
                     colSpan={5}
@@ -79,7 +90,7 @@ export default function History() {
                   </TableCell>
                 </TableRow>
               ) : (
-                visibleExecutions.map((exec) => {
+                executions.map((exec) => {
                   const statusBadge =
                     exec.status === "success" ? (
                       <Badge
@@ -161,13 +172,14 @@ export default function History() {
             </TableBody>
           </Table>
         </div>
-        {executions && executions.length > 0 ? (
+
+        {executions.length > 0 ? (
           <div className="flex items-center justify-end">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setVisibleCount((prev) => prev + pageSize)}
-              disabled={!hasMore}
+              onClick={() => setOffset((prev) => prev + pageSize)}
+              disabled={!hasMore || isFetching}
             >
               Load 10 more
             </Button>

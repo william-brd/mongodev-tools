@@ -40,8 +40,18 @@ export function ResultViewer({ data, status, duration }: ResultViewerProps) {
   }
 
   const isError = status === "error";
-  const rawString = JSON.stringify(data, null, 2);
-  const jsonString = rawString ?? String(data);
+  const jsonString = useMemo(() => {
+    try {
+      const raw = JSON.stringify(
+        data,
+        (_key, value) => (typeof value === "bigint" ? value.toString() : value),
+        2
+      );
+      return raw ?? String(data);
+    } catch {
+      return String(data);
+    }
+  }, [data]);
   const lines = useMemo(() => jsonString.split("\n"), [jsonString]);
   const effectiveLines = showAll ? lines.length : visibleLines;
   const displayLines = lines.slice(0, effectiveLines).join("\n");
@@ -174,72 +184,3 @@ export function ResultViewer({ data, status, duration }: ResultViewerProps) {
     </div>
   );
 }
-
-/* return (
-    <div className="flex flex-col h-full bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold text-foreground">Result</span>
-          {duration !== undefined && (
-            <span className="text-xs font-mono text-muted-foreground bg-background px-2 py-0.5 rounded border border-border">
-              {duration}ms
-            </span>
-          )}
-          {status && (
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                status === "success"
-                  ? "bg-green-500/10 text-green-500"
-                  : "bg-red-500/10 text-red-500"
-              }`}
-            >
-              {status}
-            </span>
-          )}
-        </div>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-2 bg-background"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem onClick={() => handleExport("json")}>
-              <FileJson className="mr-2 w-4 h-4" /> JSON
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleExport("csv")}>
-              <Table className="mr-2 w-4 h-4" /> CSV
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleExport("txt")}>
-              <FileText className="mr-2 w-4 h-4" /> Text
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      <ScrollArea className="flex-1 bg-[#1e1e1e]">
-        <div className="p-4 font-mono text-sm">
-          {isError ? (
-            <pre className="text-red-400 whitespace-pre-wrap">
-              {JSON.stringify(data, null, 2)}
-            </pre>
-          ) : (
-            <pre
-              className="text-green-300"
-              dangerouslySetInnerHTML={{
-                __html: highlight(jsonString, languages.json, "json"),
-              }}
-            />
-          )}
-        </div>
-      </ScrollArea>
-    </div>
-  );
-}
-*/
