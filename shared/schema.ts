@@ -1,4 +1,11 @@
-import { pgTable, text, serial, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  serial,
+  timestamp,
+  jsonb,
+  boolean,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -23,20 +30,23 @@ export const executions = pgTable("executions", {
   durationMs: serial("duration_ms"),
 });
 
-export const insertScriptSchema = createInsertSchema(scripts).omit({ 
-  id: true, 
-  createdAt: true 
+export const insertScriptSchema = createInsertSchema(scripts).omit({
+  id: true,
+  createdAt: true,
 });
 
-export const insertExecutionSchema = createInsertSchema(executions).omit({ 
-  id: true, 
-  executedAt: true 
+export const insertExecutionSchema = createInsertSchema(executions).omit({
+  id: true,
+  executedAt: true,
 });
 
 export type Script = typeof scripts.$inferSelect;
 export type InsertScript = z.infer<typeof insertScriptSchema>;
 export type Execution = typeof executions.$inferSelect;
 export type InsertExecution = z.infer<typeof insertExecutionSchema>;
+export type ExecutionSummary = Omit<Execution, "result"> & {
+  resultPreview: string | null;
+};
 
 export type ExecuteScriptRequest = {
   scriptId?: number;

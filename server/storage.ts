@@ -6,8 +6,9 @@ import {
   type InsertExecution,
   type Script,
   type Execution,
+  type ExecutionSummary,
 } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
   getScripts(): Promise<Script[]>;
@@ -17,6 +18,11 @@ export interface IStorage {
   deleteScript(id: number): Promise<void>;
 
   getExecutions(limit?: number, offset?: number): Promise<Execution[]>;
+  getExecution(id: number): Promise<Execution | undefined>;
+  getExecutionSummaries(
+    limit?: number,
+    offset?: number
+  ): Promise<ExecutionSummary[]>;
   logExecution(execution: InsertExecution): Promise<Execution>;
 }
 
@@ -58,6 +64,36 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(executions.executedAt))
       .limit(limit)
       .offset(offset);
+  }
+
+  async getExecution(id: number): Promise<Execution | undefined> {
+    const [execution] = await db
+      .select()
+      .from(executions)
+      .where(eq(executions.id, id));
+    return execution;
+  }
+
+  async getExecutionSummaries(
+    limit = 10,
+    offset = 0
+  ): Promise<ExecutionSummary[]> {
+    const rows = await db
+      .select({
+        id: executions.id,
+        scriptId: executions.scriptId,
+        status: executions.status,
+        executedAt: executions.executedAt,
+        durationMs: executions.durationMs,
+        resultPreview: sql<
+          string | null
+        >`left(${executions.result}::text, 300)`,
+      })
+      .from(executions)
+      .orderBy(desc(executions.executedAt))
+      .limit(limit)
+      .offset(offset);
+    return rows;
   }
 
   async logExecution(insertExecution: InsertExecution): Promise<Execution> {

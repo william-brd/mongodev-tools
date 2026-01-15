@@ -169,3 +169,16 @@ export function useExecutions(params?: { limit?: number; offset?: number }) {
     },
   });
 }
+export function useExecution(id: number | null) {
+  return useQuery({
+    queryKey: [api.executions.get.path, id],
+    enabled: !!id,
+    queryFn: async () => {
+      if (!id) return null;
+      const url = buildUrl(api.executions.get.path, { id });
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch execution");
+      return api.executions.get.responses[200].parse(await res.json());
+    },
+  });
+}

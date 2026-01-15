@@ -1,5 +1,10 @@
-import { z } from 'zod';
-import { insertScriptSchema, scripts, executions } from './schema';
+import { z } from "zod";
+import {
+  insertScriptSchema,
+  scripts,
+  executions,
+  type ExecutionSummary,
+} from "./schema";
 
 export const errorSchemas = {
   validation: z.object({
@@ -17,23 +22,31 @@ export const errorSchemas = {
 export const api = {
   scripts: {
     list: {
-      method: 'GET' as const,
-      path: '/api/scripts',
+      method: "GET" as const,
+      path: "/api/scripts",
       responses: {
-        200: z.array(z.custom<typeof scripts.$inferSelect>()),
+        200: z.array(z.custom<ExecutionSummary>()),
       },
     },
     get: {
-      method: 'GET' as const,
-      path: '/api/scripts/:id',
+      method: "GET" as const,
+      path: "/api/executions/:id",
+      responses: {
+        200: z.custom<typeof executions.$inferSelect>(),
+        404: errorSchemas.notFound,
+      },
+    },
+    get: {
+      method: "GET" as const,
+      path: "/api/scripts/:id",
       responses: {
         200: z.custom<typeof scripts.$inferSelect>(),
         404: errorSchemas.notFound,
       },
     },
     create: {
-      method: 'POST' as const,
-      path: '/api/scripts',
+      method: "POST" as const,
+      path: "/api/scripts",
       input: insertScriptSchema,
       responses: {
         201: z.custom<typeof scripts.$inferSelect>(),
@@ -41,8 +54,8 @@ export const api = {
       },
     },
     update: {
-      method: 'PUT' as const,
-      path: '/api/scripts/:id',
+      method: "PUT" as const,
+      path: "/api/scripts/:id",
       input: insertScriptSchema.partial(),
       responses: {
         200: z.custom<typeof scripts.$inferSelect>(),
@@ -50,19 +63,19 @@ export const api = {
       },
     },
     delete: {
-      method: 'DELETE' as const,
-      path: '/api/scripts/:id',
+      method: "DELETE" as const,
+      path: "/api/scripts/:id",
       responses: {
         204: z.void(),
         404: errorSchemas.notFound,
       },
     },
     execute: {
-      method: 'POST' as const,
-      path: '/api/execute',
+      method: "POST" as const,
+      path: "/api/execute",
       input: z.object({
         code: z.string(),
-        type: z.enum(['query', 'aggregation']),
+        type: z.enum(["query", "aggregation"]),
       }),
       responses: {
         200: z.object({
@@ -72,20 +85,23 @@ export const api = {
         }),
         400: errorSchemas.validation,
       },
-    }
+    },
   },
   executions: {
     list: {
-      method: 'GET' as const,
-      path: '/api/executions',
+      method: "GET" as const,
+      path: "/api/executions",
       responses: {
         200: z.array(z.custom<typeof executions.$inferSelect>()),
       },
-    }
-  }
+    },
+  },
 };
 
-export function buildUrl(path: string, params?: Record<string, string | number>): string {
+export function buildUrl(
+  path: string,
+  params?: Record<string, string | number>
+): string {
   let url = path;
   if (params) {
     Object.entries(params).forEach(([key, value]) => {

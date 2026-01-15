@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Layout } from "@/components/Layout";
-import { useExecutions } from "@/hooks/use-mongo";
+import { useExecution, useExecutions } from "@/hooks/use-mongo";
 import { format } from "date-fns";
-import type { Execution } from "@shared/schema";
+import type { ExecutionSummary } from "@shared/schema";
 import {
   Table,
   TableBody,
@@ -18,18 +18,22 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { highlight, languages } from "prismjs";
 import "prismjs/themes/prism-tomorrow.css";
+import "prismjs/components/prism-json";
 
 export default function History() {
   const pageSize = 10;
   const [offset, setOffset] = useState(0);
-  const [executions, setExecutions] = useState<Execution[]>([]);
+  const [executions, setExecutions] = useState<ExecutionSummary[]>([]);
   const [hasMore, setHasMore] = useState(true);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<number | null>(
+    null
+  );
+  const [dialogOpen, setDialogOpen] = useState(false);
   const {
     data: executionsQueryData,
     isLoading,
@@ -38,6 +42,15 @@ export default function History() {
     limit: pageSize,
     offset,
   });
+  const {
+    data: executionDetails,
+    isLoading: isLoadingExecution,
+    isError: isExecutionError,
+  } = useExecution(dialogOpen ? selectedExecutionId : null);
+  const executionResultText =
+    executionDetails !== undefined
+      ? JSON.stringify(executionDetails?.result ?? null, null, 2)
+      : "";
 
   useEffect(() => {
     if (!executionsQueryData) return;
@@ -91,18 +104,6 @@ export default function History() {
                 </TableRow>
               ) : (
                 executions.map((exec) => {
-                  const statusBadge =
-                    exec.status === "success" ? (
-                      <Badge
-                        variant="outline"
-                        className="text-green-500 border-green-500/20 bg-green-500/10"
-                      >
-                        Success
-                      </Badge>
-                    ) : (
-                      <Badge variant="destructive">Error</Badge>
-                    );
-
                   return (
                     <TableRow
                       key={exec.id}
@@ -134,36 +135,19 @@ export default function History() {
                           format(new Date(exec.executedAt), "MMM d, HH:mm:ss")}
                       </TableCell>
                       <TableCell className="max-w-[300px] truncate font-mono text-xs text-muted-foreground">
-                        {JSON.stringify(exec.result)}
+                        {exec.resultPreview ?? "Open to view full result"}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              View Result
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-3xl max-h-[80vh]">
-                            <DialogHeader>
-                              <DialogTitle className="flex items-center gap-2">
-                                Execution Result
-                                {statusBadge}
-                              </DialogTitle>
-                            </DialogHeader>
-                            <ScrollArea className="h-[60vh] rounded-md border border-border bg-[#1e1e1e] p-4">
-                              <pre
-                                className="font-mono text-sm text-green-300"
-                                dangerouslySetInnerHTML={{
-                                  __html: highlight(
-                                    JSON.stringify(exec.result, null, 2),
-                                    languages.json,
-                                    "json"
-                                  ),
-                                }}
-                              />
-                            </ScrollArea>
-                          </DialogContent>
-                        </Dialog>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedExecutionId(exec.id);
+                            setDialogOpen(true);
+                          }}
+                        >
+                          View Result
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
@@ -172,6 +156,61 @@ export default function History() {
             </TableBody>
           </Table>
         </div>
+
+        <Dialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            setDialogOpen(open);
+            if (!open) {
+              setSelectedExecutionId(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-3xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                Execution Result
+                {executionDetails?.status === "success" ? (
+                  <Badge
+                    variant="outline"
+                    className="text-green-500 border-green-500/20 bg-green-500/10"
+                  >
+                    Success
+                  </Badge>
+                ) : executionDetails ? (
+                  <Badge variant="destructive">Error</Badge>
+                ) : null}
+              </DialogTitle>
+            </DialogHeader>
+            <ScrollArea className="h-[60vh] rounded-md border border-border bg-[#1e1e1e] p-4">
+              {isLoadingExecution ? (
+                <div className="flex items-center justify-center text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading result...
+                </div>
+              ) : isExecutionError ? (
+                <div className="text-sm text-red-400">
+                  Failed to load execution result.
+                </div>
+              ) : (
+                <pre
+                  className={`font-mono text-sm ${
+                    executionDetails?.status === "error"
+                      ? "text-red-400"
+                      : "text-green-300"
+                  }`}
+                  dangerouslySetInnerHTML={{
+                    __html: highlight(
+                      executionResultText,
+                      languages.json,
+                      "json"
+                    ),
+                  }}
+                />
+              )}
+            </ScrollArea>
+          </DialogContent>
+        </Dialog>
 
         {executions.length > 0 ? (
           <div className="flex items-center justify-end">

@@ -89,8 +89,19 @@ export async function registerRoutes(
       ? 10
       : Math.min(Math.max(limit, 1), 10);
     const safeOffset = Number.isNaN(offset) ? 0 : Math.max(offset, 0);
-    const executions = await storage.getExecutions(safeLimit, safeOffset);
+    const executions = await storage.getExecutionSummaries(
+      safeLimit,
+      safeOffset
+    );
     res.json(executions);
+  });
+
+  app.get(api.executions.get.path, async (req, res) => {
+    const execution = await storage.getExecution(Number(req.params.id));
+    if (!execution) {
+      return res.status(404).json({ message: "Execution not found" });
+    }
+    res.json(execution);
   });
 
   return httpServer;

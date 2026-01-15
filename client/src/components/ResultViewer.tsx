@@ -11,6 +11,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { highlight, languages } from "prismjs";
 import "prismjs/themes/prism-tomorrow.css";
+import "prismjs/components/prism-json";
 
 interface ResultViewerProps {
   data: any;
