@@ -36,14 +36,6 @@ export const api = {
         404: errorSchemas.notFound,
       },
     },
-    get: {
-      method: "GET" as const,
-      path: "/api/scripts/:id",
-      responses: {
-        200: z.custom<typeof scripts.$inferSelect>(),
-        404: errorSchemas.notFound,
-      },
-    },
     create: {
       method: "POST" as const,
       path: "/api/scripts",
