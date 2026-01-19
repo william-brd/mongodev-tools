@@ -25,17 +25,21 @@ export const api = {
       method: "GET" as const,
       path: "/api/scripts",
       responses: {
-        200: z.array(z.custom<ExecutionSummary>()),
+        // ✅ lista de scripts (antes estava ExecutionSummary)
+        200: z.array(z.custom<typeof scripts.$inferSelect>()),
       },
     },
+
+    // ✅ scripts.get deve ser /api/scripts/:id
     get: {
       method: "GET" as const,
-      path: "/api/executions/:id",
+      path: "/api/scripts/:id",
       responses: {
-        200: z.custom<typeof executions.$inferSelect>(),
+        200: z.custom<typeof scripts.$inferSelect>(),
         404: errorSchemas.notFound,
       },
     },
+
     create: {
       method: "POST" as const,
       path: "/api/scripts",
@@ -79,16 +83,29 @@ export const api = {
       },
     },
   },
+
   executions: {
     list: {
       method: "GET" as const,
       path: "/api/executions",
       responses: {
-        200: z.array(z.custom<typeof executions.$inferSelect>()),
+        // ✅ se list é summary, use ExecutionSummary (combina com seu server)
+        200: z.array(z.custom<ExecutionSummary>()),
+        // se você preferir retornar execution completa, troque pelo $inferSelect
+      },
+    },
+
+    // ✅ AQUI está o que faltava: executions.get
+    get: {
+      method: "GET" as const,
+      path: "/api/executions/:id",
+      responses: {
+        200: z.custom<typeof executions.$inferSelect>(),
+        404: errorSchemas.notFound,
       },
     },
   },
-};
+} as const;
 
 export function buildUrl(
   path: string,
