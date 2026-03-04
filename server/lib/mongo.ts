@@ -3,16 +3,47 @@ import { MongoClient } from "mongodb";
 import vm from "vm";
 
 let client: MongoClient | null = null;
+let connectPromise: Promise<MongoClient> | null = null;
+
+async function createAndConnectClient(url: string) {
+  const nextClient = new MongoClient(url);
+  await nextClient.connect();
+  client = nextClient;
+  return nextClient;
+}
+
+function isTopologyClosedError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const maybeError = error as { message?: string; name?: string };
+  return (
+    maybeError.name === "MongoTopologyClosedError" ||
+    maybeError.message?.includes("Topology is closed")
+  );
+}
 
 async function getClient() {
-  if (client) return client;
-
   const url = process.env.MONGO_URL;
   if (!url) throw new Error("MONGO_URL environment variable is not set");
 
-  client = new MongoClient(url);
-  await client.connect();
-  return client;
+  if (client) {
+    try {
+      await client.db("admin").command({ ping: 1 });
+      return client;
+    } catch (error) {
+      if (!isTopologyClosedError(error)) {
+        throw error;
+      }
+      client = null;
+    }
+  }
+
+  if (!connectPromise) {
+    connectPromise = createAndConnectClient(url).finally(() => {
+      connectPromise = null;
+    });
+  }
+
+  return connectPromise;
 }
 
 function createDbProxy(db: any, client: MongoClient) {

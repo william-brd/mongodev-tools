@@ -23,23 +23,31 @@ async function logout(): Promise<void> {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  
-  // Fake user for guest mode
-  const guestUser: User = {
-    id: "guest",
-    email: "guest@example.com",
-    firstName: "Guest",
-    lastName: "User",
-    profileImageUrl: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
+
+  const {
+    data: user,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["/api/auth/user"],
+    queryFn: fetchUser,
+    retry: false,
+  });
+
+  const logoutMutation = useMutation({
+    mutationFn: logout,
+    onSuccess: () => {
+      queryClient.clear();
+      window.location.href = "/";
+    },
+  });
 
   return {
-    user: guestUser,
-    isLoading: false,
-    isAuthenticated: true,
-    logout: () => { window.location.href = "/"; },
-    isLoggingOut: false,
+    user,
+    isLoading,
+    isAuthenticated: !!user,
+    error,
+    logout: logoutMutation.mutate,
+    isLoggingOut: logoutMutation.isPending,
   };
 }

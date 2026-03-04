@@ -8,19 +8,27 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
 
-  const getOidcConfig = memoize(
-    async () => {
-      const replId = process.env.REPL_ID;
-      if (!replId) {
-        console.warn("REPL_ID is not set. Using a fallback for local development.");
-      }
-      return await client.discovery(
-        new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
-        replId || "fallback-id"
-      );
-    },
-    { maxAge: 3600 * 1000 }
-  );
+function getOidcSettings() {
+  const issuer = process.env.OIDC_ISSUER_URL;
+  const clientId = process.env.OIDC_CLIENT_ID;
+  const clientSecret = process.env.OIDC_CLIENT_SECRET;
+
+  if (!issuer || !clientId) {
+    throw new Error(
+      "OIDC_ISSUER_URL and OIDC_CLIENT_ID must be set for Keycloak authentication"
+    );
+  }
+
+  return { issuer, clientId, clientSecret };
+}
+
+const getOidcConfig = memoize(
+  async () => {
+    const { issuer, clientId, clientSecret } = getOidcSettings();
+    return await client.discovery(new URL(issuer), clientId, clientSecret);
+  },
+  { maxAge: 3600 * 1000 }
+);
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
@@ -31,14 +39,19 @@ export function getSession() {
     ttl: sessionTtl,
     tableName: "sessions",
   });
+
+  if (!process.env.SESSION_SECRET) {
+    throw new Error("SESSION_SECRET must be set");
+  }
+
   return session({
-    secret: process.env.SESSION_SECRET!,
+    secret: process.env.SESSION_SECRET,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
       maxAge: sessionTtl,
     },
   });
@@ -54,13 +67,13 @@ function updateUserSession(
   user.expires_at = user.claims?.exp;
 }
 
-async function upsertUser(claims: any) {
+async function upsertUser(claims: Record<string, any>) {
   await authStorage.upsertUser({
-    id: claims["sub"],
-    email: claims["email"],
-    firstName: claims["first_name"],
-    lastName: claims["last_name"],
-    profileImageUrl: claims["profile_image_url"],
+    id: claims.sub,
+    email: claims.email,
+    firstName: claims.given_name ?? claims.first_name ?? claims.preferred_username,
+    lastName: claims.family_name ?? claims.last_name ?? "",
+    profileImageUrl: claims.picture ?? claims.profile_image_url ?? null,
   });
 }
 
@@ -78,23 +91,28 @@ export async function setupAuth(app: Express) {
   ) => {
     const user = {};
     updateUserSession(user, tokens);
-    await upsertUser(tokens.claims());
+    const claims = tokens.claims();
+    if (!claims) {
+      return verified(new Error("OIDC claims were not returned"));
+    }
+    await upsertUser(claims);
     verified(null, user);
   };
 
-  // Keep track of registered strategies
   const registeredStrategies = new Set<string>();
 
-  // Helper function to ensure strategy exists for a domain
-  const ensureStrategy = (domain: string) => {
-    const strategyName = `replitauth:${domain}`;
+  const ensureStrategy = (domain: string, protocol: string) => {
+    const strategyName = `oidc:${domain}`;
     if (!registeredStrategies.has(strategyName)) {
+      const callbackUrl =
+        process.env.OIDC_CALLBACK_URL ?? `${protocol}://${domain}/api/callback`;
+
       const strategy = new Strategy(
         {
           name: strategyName,
           config,
           scope: "openid email profile offline_access",
-          callbackURL: `https://${domain}/api/callback`,
+          callbackURL: callbackUrl,
         },
         verify
       );
@@ -107,16 +125,16 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/login", (req, res, next) => {
-    ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
-      prompt: "login consent",
+    ensureStrategy(req.hostname, req.protocol);
+    passport.authenticate(`oidc:${req.hostname}`, {
+      prompt: "login",
       scope: ["openid", "email", "profile", "offline_access"],
     })(req, res, next);
   });
 
   app.get("/api/callback", (req, res, next) => {
-    ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
+    ensureStrategy(req.hostname, req.protocol);
+    passport.authenticate(`oidc:${req.hostname}`, {
       successReturnToOrRedirect: "/",
       failureRedirect: "/api/login",
     })(req, res, next);
@@ -124,12 +142,15 @@ export async function setupAuth(app: Express) {
 
   app.get("/api/logout", (req, res) => {
     req.logout(() => {
-      res.redirect(
-        client.buildEndSessionUrl(config, {
-          client_id: process.env.REPL_ID || "fallback-id",
-          post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
-        }).href
-      );
+      const { clientId } = getOidcSettings();
+      const postLogoutRedirect =
+        process.env.OIDC_POST_LOGOUT_REDIRECT_URI ?? `${req.protocol}://${req.hostname}`;
+
+      const logoutUrl = client.buildEndSessionUrl(config, {
+        client_id: clientId,
+        post_logout_redirect_uri: postLogoutRedirect,
+      });
+      res.redirect(logoutUrl.href);
     });
   });
 }
@@ -137,7 +158,7 @@ export async function setupAuth(app: Express) {
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const user = req.user as any;
 
-  if (!req.isAuthenticated() || !user.expires_at) {
+  if (!req.isAuthenticated() || !user?.expires_at) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
@@ -148,8 +169,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
 
   const refreshToken = user.refresh_token;
   if (!refreshToken) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
+    return res.status(401).json({ message: "Unauthorized" });
   }
 
   try {
@@ -157,8 +177,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
     updateUserSession(user, tokenResponse);
     return next();
-  } catch (error) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
+  } catch (_error) {
+    return res.status(401).json({ message: "Unauthorized" });
   }
 };

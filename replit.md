@@ -35,9 +35,10 @@ Preferred communication style: Simple, everyday language.
 - **Script Execution**: MongoDB scripts run in a sandboxed VM context (`server/lib/mongo.ts`)
 
 ### Authentication
-- **Replit Auth Integration**: OAuth-based authentication via Replit's OpenID Connect (currently disabled in routes)
+- **Keycloak via OIDC**: Authentication now uses OpenID Connect endpoints from Keycloak
+- **Required env vars**: `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `SESSION_SECRET` (optional: `OIDC_CLIENT_SECRET`, `OIDC_CALLBACK_URL`, `OIDC_POST_LOGOUT_REDIRECT_URI`)
 - **Session Storage**: PostgreSQL-backed sessions using connect-pg-simple
-- **Guest Mode**: Currently operates in guest mode with authentication commented out
+- **Protected routes**: API CRUD/execute routes now require an authenticated session
 
 ## External Dependencies
 
@@ -46,7 +47,7 @@ Preferred communication style: Simple, everyday language.
 - **MongoDB**: Required for script execution. Connection via `MONGO_URL` environment variable
 
 ### Third-Party Services
-- **Replit Auth**: OpenID Connect integration for user authentication (infrastructure exists but currently disabled)
+- **Keycloak**: OpenID Connect provider for user authentication
 
 ### Key NPM Packages
 - `drizzle-orm` / `drizzle-kit`: Database ORM and migration tools
