@@ -28,25 +28,14 @@ export function ResultViewer({ data, status, duration }: ResultViewerProps) {
     setShowAll(false);
   }, [data, status]);
 
-  if (!data && status !== "error") {
-    return (
-      <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-12 border-2 border-dashed border-border/50 rounded-xl bg-muted/5">
-        <div className="w-16 h-16 mb-4 rounded-full bg-muted/20 flex items-center justify-center">
-          <FileJson className="w-8 h-8 opacity-50" />
-        </div>
-        <p className="font-medium">No results yet</p>
-        <p className="text-sm opacity-60">Run a query to see results here</p>
-      </div>
-    );
-  }
-
   const isError = status === "error";
+  const hasData = data !== null && data !== undefined;
   const jsonString = useMemo(() => {
     try {
       const raw = JSON.stringify(
         data,
         (_key, value) => (typeof value === "bigint" ? value.toString() : value),
-        2
+        2,
       );
       return raw ?? String(data);
     } catch {
@@ -57,6 +46,18 @@ export function ResultViewer({ data, status, duration }: ResultViewerProps) {
   const effectiveLines = showAll ? lines.length : visibleLines;
   const displayLines = lines.slice(0, effectiveLines).join("\n");
   const hasMore = effectiveLines < lines.length;
+
+  if (!hasData && !isError) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-12 border-2 border-dashed border-border/50 rounded-xl bg-muted/5">
+        <div className="w-16 h-16 mb-4 rounded-full bg-muted/20 flex items-center justify-center">
+          <FileJson className="w-8 h-8 opacity-50" />
+        </div>
+        <p className="font-medium">No results yet</p>
+        <p className="text-sm opacity-60">Run a query to see results here</p>
+      </div>
+    );
+  }
 
   const handleExport = (format: "json" | "csv" | "txt") => {
     let blob: Blob;

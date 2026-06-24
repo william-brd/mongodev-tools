@@ -1,10 +1,13 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { setupSession } from "./auth/keycloak";
 
 const app = express();
 const httpServer = createServer(app);
+setupSession(app);
 
 declare module "http" {
   interface IncomingMessage {
@@ -14,6 +17,7 @@ declare module "http" {
 
 app.use(
   express.json({
+    limit: "50mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
@@ -60,6 +64,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  const { storage } = await import("./storage");
+  await (storage as any).init?.();
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

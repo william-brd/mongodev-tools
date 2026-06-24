@@ -127,6 +127,7 @@ export function useExecuteScript() {
     mutationFn: async (data: {
       code: string;
       type: "query" | "aggregation";
+      dbName?: string;
     }) => {
       const res = await fetch(api.scripts.execute.path, {
         method: "POST",

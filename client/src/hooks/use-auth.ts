@@ -1,45 +1,34 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { User } from "@shared/models/auth";
+import { useQuery } from "@tanstack/react-query";
 
-async function fetchUser(): Promise<User | null> {
-  const response = await fetch("/api/auth/user", {
-    credentials: "include",
-  });
+export type AuthUser = {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: "admin" | "readonly";
+  profileImageUrl: string | null;
+};
 
-  if (response.status === 401) {
-    return null;
-  }
-
-  if (!response.ok) {
-    throw new Error(`${response.status}: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
-async function logout(): Promise<void> {
-  window.location.href = "/api/logout";
+async function fetchUser(): Promise<AuthUser | null> {
+  const res = await fetch("/api/auth/user", { credentials: "include" });
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+  return res.json();
 }
 
 export function useAuth() {
-  const queryClient = useQueryClient();
-  
-  // Fake user for guest mode
-  const guestUser: User = {
-    id: "guest",
-    email: "guest@example.com",
-    firstName: "Guest",
-    lastName: "User",
-    profileImageUrl: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
+  const { data: user, isLoading } = useQuery<AuthUser | null>({
+    queryKey: ["auth-user"],
+    queryFn: fetchUser,
+    staleTime: 60_000,
+    retry: false,
+  });
 
   return {
-    user: guestUser,
-    isLoading: false,
-    isAuthenticated: true,
-    logout: () => { window.location.href = "/"; },
-    isLoggingOut: false,
+    user: user ?? null,
+    isLoading,
+    isAuthenticated: !!user,
+    isAdmin: user?.role === "admin",
+    logout: () => { window.location.href = "/api/logout"; },
   };
 }

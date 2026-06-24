@@ -72,6 +72,7 @@ export const api = {
       input: z.object({
         code: z.string(),
         type: z.enum(["query", "aggregation"]),
+        dbName: z.string().optional(),
       }),
       responses: {
         200: z.object({
