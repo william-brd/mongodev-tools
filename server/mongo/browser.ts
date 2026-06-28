@@ -13,8 +13,14 @@ function isTopologyClosed(err: unknown) {
 }
 
 export async function getMongoClient(): Promise<MongoClient> {
-  const url = process.env.MONGO_URL;
+  // Docker Stack (env_file) às vezes inclui as aspas como parte do valor.
+  // Ex: MONGO_URL="mongodb://..." → process.env.MONGO_URL = '"mongodb://..."'
+  const raw = process.env.MONGO_URL ?? "";
+  const url = raw.replace(/^["']|["']$/g, "").trim();
   if (!url) throw new Error("MONGO_URL not set");
+  if (!url.startsWith("mongodb://") && !url.startsWith("mongodb+srv://")) {
+    throw new Error(`MONGO_URL inválida: valor atual = "${url.slice(0, 30)}..." (remova aspas do env_file)`);
+  }
 
   if (_client) {
     try {

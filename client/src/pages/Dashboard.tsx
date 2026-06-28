@@ -66,7 +66,7 @@ export default function Dashboard() {
 
   const handleExecute = () => {
     executeMutation.mutate(
-      { code, type, dbName: dbName || undefined },
+      { code, type, dbName: dbName || undefined, scriptId },
       {
         onSuccess: (data) => {
           setResult(data.result);

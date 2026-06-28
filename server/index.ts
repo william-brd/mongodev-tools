@@ -7,6 +7,10 @@ import { setupSession } from "./auth/keycloak";
 
 const app = express();
 const httpServer = createServer(app);
+
+// Necessário para cookies e IP corretos por trás de nginx/proxy reverso
+app.set("trust proxy", 1);
+
 setupSession(app);
 
 declare module "http" {
@@ -25,6 +29,18 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Remove o prefixo de sub-caminho antes de chegar nas rotas.
+// Ex: APP_BASE_PATH=/mongo-tools → /mongo-tools/api/... vira /api/...
+const basePath = process.env.APP_BASE_PATH || "";
+if (basePath) {
+  app.use((req, _res, next) => {
+    if (req.url === basePath || req.url.startsWith(basePath + "/")) {
+      req.url = req.url.slice(basePath.length) || "/";
+    }
+    next();
+  });
+}
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

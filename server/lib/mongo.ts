@@ -27,8 +27,12 @@ function isTopologyClosed(error: unknown) {
 }
 
 async function getClient() {
-  const url = process.env.MONGO_URL;
+  const raw = process.env.MONGO_URL ?? "";
+  const url = raw.replace(/^["']|["']$/g, "").trim();
   if (!url) throw new Error("MONGO_URL environment variable is not set");
+  if (!url.startsWith("mongodb://") && !url.startsWith("mongodb+srv://")) {
+    throw new Error(`MONGO_URL inválida: valor atual = "${url.slice(0, 30)}..." (remova aspas do env_file)`);
+  }
 
   if (client) {
     try {

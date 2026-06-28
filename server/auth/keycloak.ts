@@ -94,6 +94,10 @@ function extractRoleFromClaims(claims: Record<string, unknown>): "admin" | "read
   return allRoles.includes(adminRole) ? "admin" : "readonly";
 }
 
+function appRoot() {
+  return (process.env.APP_BASE_PATH || "") + "/";
+}
+
 export function setupAuthRoutes(app: Express) {
   if (!isKeycloakConfigured()) {
     app.get("/api/auth/user", (_req, res) => {
@@ -106,8 +110,8 @@ export function setupAuthRoutes(app: Express) {
         profileImageUrl: null,
       } satisfies SessionUser);
     });
-    app.get("/api/login", (_req, res) => res.redirect("/"));
-    app.get("/api/logout", (_req, res) => res.redirect("/"));
+    app.get("/api/login", (_req, res) => res.redirect(appRoot()));
+    app.get("/api/logout", (_req, res) => res.redirect(appRoot()));
     return;
   }
 
@@ -124,6 +128,7 @@ export function setupAuthRoutes(app: Express) {
       req.session.state = state;
 
       const redirectUri = `${getAppBaseUrl(req)}/api/callback`;
+      console.log(`[auth] login — sid=${req.sessionID} redirectUri=${redirectUri}`);
       const url = oidcClient.buildAuthorizationUrl(config, {
         redirect_uri: redirectUri,
         scope: "openid email profile",
@@ -132,7 +137,14 @@ export function setupAuthRoutes(app: Express) {
         nonce,
         state,
       });
-      res.redirect(url.href);
+
+      // Salva explicitamente a sessão com os valores PKCE antes de redirecionar
+      // para Keycloak. Sem isso, há risco de o store não ter persistido os dados
+      // antes de o browser chegar no /api/callback.
+      req.session.save((saveErr) => {
+        if (saveErr) console.error("[auth] login session save error:", saveErr);
+        res.redirect(url.href);
+      });
     } catch (err) {
       console.error("[auth] login error:", err);
       res.status(500).json({ message: "Authentication service unavailable" });
@@ -143,12 +155,14 @@ export function setupAuthRoutes(app: Express) {
     try {
       const config = await getOidcConfig();
       const { codeVerifier, nonce, state } = req.session;
+      console.log(`[auth] callback — sid=${req.sessionID} codeVerifier=${codeVerifier ? "ok" : "AUSENTE"} cookie=${req.headers.cookie ? "ok" : "AUSENTE"}`);
       const redirectUri = `${getAppBaseUrl(req)}/api/callback`;
 
-      const currentUrl = new URL(
-        req.url,
-        getAppBaseUrl(req)
-      );
+      // Monta o currentUrl usando a redirectUri completa como base para preservar
+      // o sub-caminho (APP_BASE_PATH). new URL(req.url, base) descarta o path
+      // da base quando req.url começa com "/", perdendo o prefixo /mongo-tools.
+      const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+      const currentUrl = new URL(redirectUri + qs);
 
       const tokens = await oidcClient.authorizationCodeGrant(
         config,
@@ -192,10 +206,15 @@ export function setupAuthRoutes(app: Express) {
       delete req.session.nonce;
       delete req.session.state;
 
-      res.redirect("/");
+      // Salva explicitamente antes do redirect para garantir que o cookie
+      // de sessão seja persistido mesmo com resave:false
+      req.session.save((err) => {
+        if (err) console.error("[auth] session save error:", err);
+        res.redirect(appRoot());
+      });
     } catch (err) {
       console.error("[auth] callback error:", err);
-      res.redirect("/api/login");
+      res.redirect(appRoot() + "api/login");
     }
   });
 
@@ -211,12 +230,15 @@ export function setupAuthRoutes(app: Express) {
       res.redirect(endUrl.href);
     } catch {
       req.session.destroy(() => {});
-      res.redirect("/");
+      res.redirect(appRoot());
     }
   });
 
   app.get("/api/auth/user", (req, res) => {
-    if (!req.session.user) return res.status(401).json({ message: "Unauthorized" });
+    if (!req.session.user) {
+      console.warn(`[auth] /api/auth/user — sem sessão (sid=${req.sessionID}, cookie=${req.headers.cookie ? "presente" : "ausente"})`);
+      return res.status(401).json({ message: "Unauthorized" });
+    }
     res.json(req.session.user);
   });
 }

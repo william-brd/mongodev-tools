@@ -1,0 +1,16 @@
+services:
+  mongodev-tools:
+    image: mongodev-tools:1.0.0
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - ../variables.env
+    environment:
+      NODE_ENV: production        # sobrepõe qualquer valor do env_file
+      APP_BASE_PATH: /mongo-tools # necessário para strip do prefixo no Express
+    restart: unless-stopped
+    deploy:
+      replicas: 1               # sessão em MemoryStore — não pode ter mais de 1 réplica
+      restart_policy:
+        condition: on-failure

@@ -26,6 +26,8 @@ export default defineConfig({
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },
+  // APP_BASE_PATH permite servir a app em sub-caminho (ex: /mongo-tools)
+  base: (process.env.APP_BASE_PATH || "") + "/",
   root: path.resolve(import.meta.dirname, "client"),
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),

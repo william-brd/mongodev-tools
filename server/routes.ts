@@ -5,6 +5,7 @@ import { setupAuthRoutes, requireAuth, requireAdmin, currentUser } from "./auth/
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { executeMongoScript } from "./lib/mongo";
+import { dbg } from "./logger";
 import {
   listDatabases,
   listCollections,
@@ -47,7 +48,7 @@ export async function registerRoutes(
     res.json(script);
   });
 
-  app.post(api.scripts.create.path, requireAdmin, async (req, res) => {
+  app.post(api.scripts.create.path, requireAuth, async (req, res) => {
     try {
       const input = api.scripts.create.input.parse(req.body);
       const script = await storage.createScript(input);
@@ -59,12 +60,12 @@ export async function registerRoutes(
     }
   });
 
-  app.put(api.scripts.update.path, requireAdmin, async (req, res) => {
+  app.put(api.scripts.update.path, requireAuth, async (req, res) => {
     const script = await storage.updateScript(Number(req.params.id), req.body);
     res.json(script);
   });
 
-  app.delete(api.scripts.delete.path, requireAdmin, async (req, res) => {
+  app.delete(api.scripts.delete.path, requireAuth, async (req, res) => {
     await storage.deleteScript(Number(req.params.id));
     res.sendStatus(204);
   });
@@ -78,7 +79,8 @@ export async function registerRoutes(
   app.post(api.scripts.execute.path, requireAuth, async (req, res) => {
     const start = Date.now();
     try {
-      const { code, type, dbName } = req.body;
+      const { code, type, dbName, scriptId } = req.body;
+      dbg("[execute] body recebido:", { type, dbName, scriptId, codeLength: code?.length });
 
       const user = currentUser(req);
       if (user.role === "readonly" && WRITE_OPS.test(code)) {
@@ -91,20 +93,25 @@ export async function registerRoutes(
       const durationMs = Date.now() - start;
 
       await storage.logExecution({
-        scriptId: undefined,
+        scriptId: scriptId ?? null,
+        code: code ?? null,
         status: "success",
         result,
         durationMs,
+        executedBy: user.email || user.id,
       });
 
       res.json({ result, durationMs, status: "success" });
     } catch (error: any) {
       const durationMs = Date.now() - start;
+      const user = currentUser(req);
       await storage.logExecution({
-        scriptId: undefined,
+        scriptId: req.body?.scriptId ?? null,
+        code: req.body?.code ?? null,
         status: "error",
         result: { error: error.message },
         durationMs,
+        executedBy: user?.email || user?.id || null,
       });
       res.status(500).json({ message: error.message });
     }

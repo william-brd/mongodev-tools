@@ -1,10 +1,8 @@
-import {
-  type InsertScript,
-  type InsertExecution,
-  type Script,
-  type Execution,
-  type ExecutionSummary,
-} from "@shared/schema";
+import { AppDataSource } from "./db";
+import { ScriptEntity, type ScriptRow } from "./entities/script.entity";
+import { ExecutionEntity, type ExecutionRow } from "./entities/execution.entity";
+import type { InsertScript, InsertExecution, Script, Execution, ExecutionSummary } from "@shared/schema";
+import { isDebug, dbg } from "./logger";
 
 export interface IStorage {
   getScripts(): Promise<Script[]>;
@@ -15,10 +13,7 @@ export interface IStorage {
 
   getExecutions(limit?: number, offset?: number): Promise<Execution[]>;
   getExecution(id: number): Promise<Execution | undefined>;
-  getExecutionSummaries(
-    limit?: number,
-    offset?: number
-  ): Promise<ExecutionSummary[]>;
+  getExecutionSummaries(limit?: number, offset?: number): Promise<ExecutionSummary[]>;
   logExecution(execution: InsertExecution): Promise<Execution>;
 }
 
@@ -28,13 +23,8 @@ export class MemoryStorage implements IStorage {
   private nextScriptId = 1;
   private nextExecId = 1;
 
-  async getScripts() {
-    return [...this.scripts].reverse();
-  }
-
-  async getScript(id: number) {
-    return this.scripts.find((s) => s.id === id);
-  }
+  async getScripts() { return [...this.scripts].reverse(); }
+  async getScript(id: number) { return this.scripts.find((s) => s.id === id); }
 
   async createScript(data: InsertScript): Promise<Script> {
     const script: Script = {
@@ -42,7 +32,8 @@ export class MemoryStorage implements IStorage {
       name: data.name,
       description: data.description ?? null,
       code: data.code,
-      type: data.type,
+      type: data.type ?? "query",
+      isReadonly: data.isReadonly ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -57,17 +48,13 @@ export class MemoryStorage implements IStorage {
     return this.scripts[idx];
   }
 
-  async deleteScript(id: number) {
-    this.scripts = this.scripts.filter((s) => s.id !== id);
-  }
+  async deleteScript(id: number) { this.scripts = this.scripts.filter((s) => s.id !== id); }
 
   async getExecutions(limit = 10, offset = 0) {
     return [...this.executions].reverse().slice(offset, offset + limit);
   }
 
-  async getExecution(id: number) {
-    return this.executions.find((e) => e.id === id);
-  }
+  async getExecution(id: number) { return this.executions.find((e) => e.id === id); }
 
   async getExecutionSummaries(limit = 10, offset = 0): Promise<ExecutionSummary[]> {
     return [...this.executions]
@@ -76,9 +63,11 @@ export class MemoryStorage implements IStorage {
       .map((e) => ({
         id: e.id,
         scriptId: e.scriptId ?? null,
+        code: e.code ?? null,
         status: e.status,
         executedAt: e.executedAt,
         durationMs: e.durationMs,
+        executedBy: e.executedBy ?? null,
         resultPreview: JSON.stringify(e.result ?? "").slice(0, 300),
       }));
   }
@@ -87,10 +76,12 @@ export class MemoryStorage implements IStorage {
     const execution: Execution = {
       id: this.nextExecId++,
       scriptId: data.scriptId ?? null,
+      code: data.code ?? null,
       status: data.status,
       result: data.result as any,
-      durationMs: data.durationMs,
+      durationMs: data.durationMs ?? 0,
       executedAt: new Date(),
+      executedBy: data.executedBy ?? null,
     };
     this.executions.push(execution);
     return execution;
@@ -98,142 +89,181 @@ export class MemoryStorage implements IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  private _db: any = null;
-  private _initError: string | null = null;
+  private _ready = false;
   private _fallback = new MemoryStorage();
 
   async init() {
-    try {
-      const { db } = await import("./db");
-      await db.execute("select 1" as any);
-      this._db = db;
-      console.log("[storage] PostgreSQL conectado");
-    } catch (e: any) {
-      this._initError = e.message;
-      console.warn(`[storage] PostgreSQL indisponível (${e.message}) — usando memória`);
+    const vendor = (process.env.DATABASE_VENDOR || "postgresql").toLowerCase();
+    const schema = process.env.DATABASE_SCHEMA || "mongo_tools";
+
+    const maskPw = (v?: string) => v ? `${v.slice(0, 2)}***` : "(não definido)";
+    const maskUrl = (v?: string) => v?.replace(/\/\/([^:]+):[^@]+@/, "//$1:***@") ?? "(não definido)";
+
+    const connHint = process.env.DATABASE_URL
+      ? `url=${maskUrl(process.env.DATABASE_URL)}`
+      : `host=${process.env.DATABASE_HOST ?? "(não definido)"}`;
+
+    console.log(`[storage] iniciando — vendor=${vendor} schema=${schema} ${connHint} (LOG_LEVEL=${process.env.LOG_LEVEL ?? "info"})`);
+
+    if (isDebug) {
+      dbg("[storage] variáveis de conexão:", {
+        DATABASE_VENDOR:       process.env.DATABASE_VENDOR       ?? "(não definido)",
+        DATABASE_URL:          maskUrl(process.env.DATABASE_URL),
+        DATABASE_HOST:         process.env.DATABASE_HOST         ?? "(não definido)",
+        DATABASE_PORT:         process.env.DATABASE_PORT         ?? "(não definido)",
+        DATABASE_NAME:         process.env.DATABASE_NAME         ?? "(não definido)",
+        DATABASE_SERVICE_NAME: process.env.DATABASE_SERVICE_NAME ?? "(não definido)",
+        DATABASE_SID:          process.env.DATABASE_SID          ?? "(não definido)",
+        DATABASE_USER:         process.env.DATABASE_USER         ?? "(não definido)",
+        DATABASE_PASSWORD:     maskPw(process.env.DATABASE_PASSWORD),
+        DATABASE_SCHEMA:       process.env.DATABASE_SCHEMA       ?? "(não definido — padrão: mongo_tools)",
+      });
     }
-  }
 
-  private get db() {
-    if (!this._db) throw new Error("pg_unavailable");
-    return this._db;
-  }
-
-  private async run<T>(fn: () => Promise<T>): Promise<T> {
-    if (!this._db) return fn.call(this._fallback);
     try {
-      return await fn();
+      await AppDataSource.initialize();
+      await this._ensureSchema();
+      await AppDataSource.synchronize();
+      this._ready = true;
+      console.log(`[storage] conectado — vendor: ${vendor}, schema: ${schema}`);
     } catch (e: any) {
-      if (e.message === "pg_unavailable" || e.code === "ECONNREFUSED") {
-        return fn.call(this._fallback);
+      console.error(`[storage] banco indisponível (${e.message}) — usando memória`);
+      if (isDebug) {
+        console.error("[storage][debug] stack completo:", e.stack);
       }
-      throw e;
     }
   }
 
-  async getScripts() {
-    if (!this._db) return this._fallback.getScripts();
-    const { db, scripts } = await import("./db").then(async (m) => ({
-      db: m.db,
-      scripts: (await import("@shared/schema")).scripts,
-    }));
-    const { desc } = await import("drizzle-orm");
-    return db.select().from(scripts).orderBy(desc(scripts.createdAt));
+  private async _ensureSchema() {
+    const schema = process.env.DATABASE_SCHEMA || "mongo_tools";
+    const vendor = (process.env.DATABASE_VENDOR || "postgresql").toLowerCase();
+
+    if (vendor === "postgresql" || vendor === "postgres") {
+      dbg(`[storage] executando: CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+      await AppDataSource.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+      console.log(`[storage] schema "${schema}" pronto (PostgreSQL)`);
+    } else if (vendor === "mssql") {
+      dbg(`[storage] executando: CREATE SCHEMA [${schema}] se não existir`);
+      await AppDataSource.query(`
+        IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = '${schema}')
+          EXEC('CREATE SCHEMA [${schema}]')
+      `);
+      console.log(`[storage] schema "${schema}" pronto (MSSQL)`);
+    } else if (vendor === "oracle") {
+      console.log(`[storage] Oracle: usando schema "${schema}" — deve existir no banco`);
+    }
   }
 
-  async getScript(id: number) {
-    if (!this._db) return this._fallback.getScript(id);
-    const { db, scripts } = await import("./db").then(async (m) => ({
-      db: m.db,
-      scripts: (await import("@shared/schema")).scripts,
-    }));
-    const { eq } = await import("drizzle-orm");
-    const [s] = await db.select().from(scripts).where(eq(scripts.id, id));
-    return s;
+  private scripts() { return AppDataSource.getRepository<ScriptRow>(ScriptEntity); }
+  private executions() { return AppDataSource.getRepository<ExecutionRow>(ExecutionEntity); }
+
+  async getScripts(): Promise<Script[]> {
+    if (!this._ready) return this._fallback.getScripts();
+    try {
+      const rows = await this.scripts().find({ order: { createdAt: "DESC" } });
+      return rows as unknown as Script[];
+    } catch { return this._fallback.getScripts(); }
   }
 
-  async createScript(data: InsertScript) {
-    if (!this._db) return this._fallback.createScript(data);
-    const { db, scripts } = await import("./db").then(async (m) => ({
-      db: m.db,
-      scripts: (await import("@shared/schema")).scripts,
-    }));
-    const [s] = await db.insert(scripts).values(data).returning();
-    return s;
+  async getScript(id: number): Promise<Script | undefined> {
+    if (!this._ready) return this._fallback.getScript(id);
+    try {
+      const row = await this.scripts().findOneBy({ id } as any);
+      return row as unknown as Script | undefined;
+    } catch { return this._fallback.getScript(id); }
   }
 
-  async updateScript(id: number, updates: Partial<InsertScript>) {
-    if (!this._db) return this._fallback.updateScript(id, updates);
-    const { db, scripts } = await import("./db").then(async (m) => ({
-      db: m.db,
-      scripts: (await import("@shared/schema")).scripts,
-    }));
-    const { eq } = await import("drizzle-orm");
-    const [s] = await db.update(scripts).set(updates).where(eq(scripts.id, id)).returning();
-    return s;
+  async createScript(data: InsertScript): Promise<Script> {
+    if (!this._ready) {
+      dbg("[storage] createScript → memória (banco não pronto)");
+      return this._fallback.createScript(data);
+    }
+    try {
+      dbg("[storage] createScript → banco", { name: data.name });
+      const row = await this.scripts().save({ ...data } as any);
+      return row as unknown as Script;
+    } catch (e: any) {
+      console.error(`[storage] createScript falhou (${e.message}) — usando memória`);
+      if (isDebug) console.error("[storage][debug] stack:", e.stack);
+      return this._fallback.createScript(data);
+    }
   }
 
-  async deleteScript(id: number) {
-    if (!this._db) return this._fallback.deleteScript(id);
-    const { db, scripts } = await import("./db").then(async (m) => ({
-      db: m.db,
-      scripts: (await import("@shared/schema")).scripts,
-    }));
-    const { eq } = await import("drizzle-orm");
-    await db.delete(scripts).where(eq(scripts.id, id));
+  async updateScript(id: number, updates: Partial<InsertScript>): Promise<Script> {
+    if (!this._ready) return this._fallback.updateScript(id, updates);
+    try {
+      await this.scripts().update(id, updates as any);
+      const row = await this.scripts().findOneBy({ id } as any);
+      if (!row) throw new Error("Script not found");
+      return row as unknown as Script;
+    } catch (e: any) {
+      if (e.message === "Script not found") throw e;
+      return this._fallback.updateScript(id, updates);
+    }
   }
 
-  async getExecutions(limit = 10, offset = 0) {
-    if (!this._db) return this._fallback.getExecutions(limit, offset);
-    const { db, executions } = await import("./db").then(async (m) => ({
-      db: m.db,
-      executions: (await import("@shared/schema")).executions,
-    }));
-    const { desc } = await import("drizzle-orm");
-    return db.select().from(executions).orderBy(desc(executions.executedAt)).limit(limit).offset(offset);
+  async deleteScript(id: number): Promise<void> {
+    if (!this._ready) return this._fallback.deleteScript(id);
+    try {
+      await this.scripts().delete(id);
+    } catch { return this._fallback.deleteScript(id); }
   }
 
-  async getExecution(id: number) {
-    if (!this._db) return this._fallback.getExecution(id);
-    const { db, executions } = await import("./db").then(async (m) => ({
-      db: m.db,
-      executions: (await import("@shared/schema")).executions,
-    }));
-    const { eq } = await import("drizzle-orm");
-    const [e] = await db.select().from(executions).where(eq(executions.id, id));
-    return e;
+  async getExecutions(limit = 10, offset = 0): Promise<Execution[]> {
+    if (!this._ready) return this._fallback.getExecutions(limit, offset);
+    try {
+      const rows = await this.executions().find({
+        order: { executedAt: "DESC" },
+        take: limit,
+        skip: offset,
+      });
+      return rows as unknown as Execution[];
+    } catch { return this._fallback.getExecutions(limit, offset); }
+  }
+
+  async getExecution(id: number): Promise<Execution | undefined> {
+    if (!this._ready) return this._fallback.getExecution(id);
+    try {
+      const row = await this.executions().findOneBy({ id } as any);
+      return row as unknown as Execution | undefined;
+    } catch { return this._fallback.getExecution(id); }
   }
 
   async getExecutionSummaries(limit = 10, offset = 0): Promise<ExecutionSummary[]> {
-    if (!this._db) return this._fallback.getExecutionSummaries(limit, offset);
-    const { db, executions } = await import("./db").then(async (m) => ({
-      db: m.db,
-      executions: (await import("@shared/schema")).executions,
-    }));
-    const { desc, sql } = await import("drizzle-orm");
-    return db
-      .select({
-        id: executions.id,
-        scriptId: executions.scriptId,
-        status: executions.status,
-        executedAt: executions.executedAt,
-        durationMs: executions.durationMs,
-        resultPreview: sql<string | null>`left(${executions.result}::text, 300)`,
-      })
-      .from(executions)
-      .orderBy(desc(executions.executedAt))
-      .limit(limit)
-      .offset(offset);
+    if (!this._ready) return this._fallback.getExecutionSummaries(limit, offset);
+    try {
+      const rows = await this.executions().find({
+        order: { executedAt: "DESC" },
+        take: limit,
+        skip: offset,
+      });
+      return rows.map((e) => ({
+        id: e.id,
+        scriptId: e.scriptId ?? null,
+        code: e.code ?? null,
+        status: e.status,
+        executedAt: e.executedAt,
+        durationMs: e.durationMs,
+        executedBy: e.executedBy ?? null,
+        resultPreview: JSON.stringify(e.result ?? "").slice(0, 300),
+      }));
+    } catch { return this._fallback.getExecutionSummaries(limit, offset); }
   }
 
-  async logExecution(data: InsertExecution) {
-    if (!this._db) return this._fallback.logExecution(data);
-    const { db, executions } = await import("./db").then(async (m) => ({
-      db: m.db,
-      executions: (await import("@shared/schema")).executions,
-    }));
-    const [e] = await db.insert(executions).values(data).returning();
-    return e;
+  async logExecution(data: InsertExecution): Promise<Execution> {
+    if (!this._ready) {
+      dbg("[storage] logExecution → memória (banco não pronto)");
+      return this._fallback.logExecution(data);
+    }
+    try {
+      dbg("[storage] logExecution → banco", { scriptId: data.scriptId, executedBy: data.executedBy, status: data.status });
+      const row = await this.executions().save({ ...data } as any);
+      return row as unknown as Execution;
+    } catch (e: any) {
+      console.error(`[storage] logExecution falhou (${e.message}) — usando memória`);
+      if (isDebug) console.error("[storage][debug] stack:", e.stack);
+      return this._fallback.logExecution(data);
+    }
   }
 }
 

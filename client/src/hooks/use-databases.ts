@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch } from "@/lib/queryClient";
 
 const base = "/api/mongo/databases";
 
@@ -11,7 +12,7 @@ export function useDatabases() {
   return useQuery<DatabaseInfo[]>({
     queryKey: ["databases"],
     queryFn: async () => {
-      const res = await fetch(base, { credentials: "include" });
+      const res = await apiFetch(base);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -28,7 +29,7 @@ export function useCollections(db: string | null) {
     queryKey: ["collections", db],
     enabled: !!db,
     queryFn: async () => {
-      const res = await fetch(`${base}/${db}/collections`, { credentials: "include" });
+      const res = await apiFetch(`${base}/${db}/collections`);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -41,11 +42,10 @@ export function useCreateCollection(db: string) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (name: string) => {
-      const res = await fetch(`${base}/${db}/collections`, {
+      const res = await apiFetch(`${base}/${db}/collections`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
-        credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).message);
     },
@@ -62,9 +62,8 @@ export function useDropCollection(db: string) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (col: string) => {
-      const res = await fetch(`${base}/${db}/collections/${col}`, {
+      const res = await apiFetch(`${base}/${db}/collections/${col}`, {
         method: "DELETE",
-        credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).message);
     },
@@ -82,7 +81,7 @@ export function useCollectionStats(db: string, col: string) {
   return useQuery({
     queryKey: ["col-stats", db, col],
     queryFn: async () => {
-      const res = await fetch(`${base}/${db}/collections/${col}/stats`, { credentials: "include" });
+      const res = await apiFetch(`${base}/${db}/collections/${col}/stats`);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -94,7 +93,7 @@ export function useDatabaseStats(db: string) {
   return useQuery({
     queryKey: ["db-stats", db],
     queryFn: async () => {
-      const res = await fetch(`${base}/${db}/stats`, { credentials: "include" });
+      const res = await apiFetch(`${base}/${db}/stats`);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -121,9 +120,7 @@ export function useDocuments(
       if (opts.projection) params.set("projection", opts.projection);
       params.set("limit", String(opts.limit ?? 50));
       params.set("skip", String(opts.skip ?? 0));
-      const res = await fetch(`${base}/${db}/collections/${col}/documents?${params}`, {
-        credentials: "include",
-      });
+      const res = await apiFetch(`${base}/${db}/collections/${col}/documents?${params}`);
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
     },
@@ -136,11 +133,10 @@ export function useInsertDocument(db: string, col: string) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (doc: unknown) => {
-      const res = await fetch(`${base}/${db}/collections/${col}/documents`, {
+      const res = await apiFetch(`${base}/${db}/collections/${col}/documents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(doc),
-        credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
@@ -158,11 +154,10 @@ export function useUpdateDocument(db: string, col: string) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ id, update }: { id: string; update: unknown }) => {
-      const res = await fetch(`${base}/${db}/collections/${col}/documents/${id}`, {
+      const res = await apiFetch(`${base}/${db}/collections/${col}/documents/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(update),
-        credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
@@ -180,11 +175,10 @@ export function useReplaceDocument(db: string, col: string) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ id, doc }: { id: string; doc: unknown }) => {
-      const res = await fetch(`${base}/${db}/collections/${col}/documents/${id}/replace`, {
+      const res = await apiFetch(`${base}/${db}/collections/${col}/documents/${id}/replace`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(doc),
-        credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
@@ -202,9 +196,8 @@ export function useDeleteDocument(db: string, col: string) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`${base}/${db}/collections/${col}/documents/${id}`, {
+      const res = await apiFetch(`${base}/${db}/collections/${col}/documents/${id}`, {
         method: "DELETE",
-        credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
@@ -222,11 +215,10 @@ export function useBulkDelete(db: string, col: string) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (ids: string[]) => {
-      const res = await fetch(`${base}/${db}/collections/${col}/documents/bulk-delete`, {
+      const res = await apiFetch(`${base}/${db}/collections/${col}/documents/bulk-delete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids }),
-        credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
@@ -248,9 +240,7 @@ export function useIndexes(db: string, col: string) {
     queryKey: ["indexes", db, col],
     enabled: !!db && !!col,
     queryFn: async () => {
-      const res = await fetch(`${base}/${db}/collections/${col}/indexes`, {
-        credentials: "include",
-      });
+      const res = await apiFetch(`${base}/${db}/collections/${col}/indexes`);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -263,11 +253,10 @@ export function useCreateIndex(db: string, col: string) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (payload: { keys: Record<string, unknown>; name?: string; unique?: boolean; sparse?: boolean }) => {
-      const res = await fetch(`${base}/${db}/collections/${col}/indexes`, {
+      const res = await apiFetch(`${base}/${db}/collections/${col}/indexes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-        credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
@@ -285,9 +274,8 @@ export function useDropIndex(db: string, col: string) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (indexName: string) => {
-      const res = await fetch(`${base}/${db}/collections/${col}/indexes/${encodeURIComponent(indexName)}`, {
+      const res = await apiFetch(`${base}/${db}/collections/${col}/indexes/${encodeURIComponent(indexName)}`, {
         method: "DELETE",
-        credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).message);
     },
@@ -306,11 +294,10 @@ export function useImportDocuments(db: string, col: string) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ documents, mode }: { documents: unknown[]; mode: "insert" | "upsert" }) => {
-      const res = await fetch(`${base}/${db}/collections/${col}/import`, {
+      const res = await apiFetch(`${base}/${db}/collections/${col}/import`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ documents, mode }),
-        credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();

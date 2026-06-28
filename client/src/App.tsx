@@ -1,4 +1,4 @@
-import { Switch, Route, useLocation } from "wouter";
+import { Router, Switch, Route, useLocation } from "wouter";
 import { useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -37,7 +37,7 @@ function AuthGuard({ component: Component }: { component: React.ComponentType })
   return <Component />;
 }
 
-function Router() {
+function AppRoutes() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
@@ -50,12 +50,17 @@ function Router() {
   );
 }
 
+// Remove trailing slash: "/mongo-tools/" → "/mongo-tools", "/" → ""
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
-        <Router />
+        <Router base={BASE}>
+          <AppRoutes />
+        </Router>
       </TooltipProvider>
     </QueryClientProvider>
   );

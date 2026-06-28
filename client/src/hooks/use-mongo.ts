@@ -1,15 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch } from "@/lib/queryClient";
 import { type InsertScript } from "@shared/schema";
 
 export function useScripts() {
   return useQuery({
     queryKey: [api.scripts.list.path],
     queryFn: async () => {
-      const res = await fetch(api.scripts.list.path, {
-        credentials: "include",
-      });
+      const res = await apiFetch(api.scripts.list.path);
       if (!res.ok) throw new Error("Failed to fetch scripts");
       return api.scripts.list.responses[200].parse(await res.json());
     },
@@ -23,7 +22,7 @@ export function useScript(id: number | null) {
     queryFn: async () => {
       if (!id) return null;
       const url = buildUrl(api.scripts.get.path, { id });
-      const res = await fetch(url, { credentials: "include" });
+      const res = await apiFetch(url);
       if (!res.ok) throw new Error("Failed to fetch script");
       return api.scripts.get.responses[200].parse(await res.json());
     },
@@ -36,11 +35,10 @@ export function useCreateScript() {
 
   return useMutation({
     mutationFn: async (data: InsertScript) => {
-      const res = await fetch(api.scripts.create.path, {
+      const res = await apiFetch(api.scripts.create.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
-        credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to save script");
       return api.scripts.create.responses[201].parse(await res.json());
@@ -50,11 +48,7 @@ export function useCreateScript() {
       toast({ title: "Success", description: "Script saved successfully" });
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 }
@@ -64,16 +58,12 @@ export function useUpdateScript() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async ({
-      id,
-      ...data
-    }: { id: number } & Partial<InsertScript>) => {
+    mutationFn: async ({ id, ...data }: { id: number } & Partial<InsertScript>) => {
       const url = buildUrl(api.scripts.update.path, { id });
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
-        credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to update script");
       return api.scripts.update.responses[200].parse(await res.json());
@@ -83,11 +73,7 @@ export function useUpdateScript() {
       toast({ title: "Success", description: "Script updated successfully" });
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 }
@@ -99,10 +85,7 @@ export function useDeleteScript() {
   return useMutation({
     mutationFn: async (id: number) => {
       const url = buildUrl(api.scripts.delete.path, { id });
-      const res = await fetch(url, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const res = await apiFetch(url, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete script");
     },
     onSuccess: () => {
@@ -110,11 +93,7 @@ export function useDeleteScript() {
       toast({ title: "Success", description: "Script deleted" });
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 }
@@ -128,12 +107,12 @@ export function useExecuteScript() {
       code: string;
       type: "query" | "aggregation";
       dbName?: string;
+      scriptId?: number | null;
     }) => {
-      const res = await fetch(api.scripts.execute.path, {
+      const res = await apiFetch(api.scripts.execute.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
-        credentials: "include",
       });
 
       if (!res.ok) {
@@ -147,11 +126,7 @@ export function useExecuteScript() {
       queryClient.invalidateQueries({ queryKey: [api.executions.list.path] });
     },
     onError: (error) => {
-      toast({
-        title: "Execution Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Execution Failed", description: error.message, variant: "destructive" });
     },
   });
 }
@@ -164,12 +139,13 @@ export function useExecutions(params?: { limit?: number; offset?: number }) {
     queryKey: [api.executions.list.path, limit, offset],
     queryFn: async () => {
       const url = `${api.executions.list.path}?limit=${limit}&offset=${offset}`;
-      const res = await fetch(url, { credentials: "include" });
+      const res = await apiFetch(url);
       if (!res.ok) throw new Error("Failed to fetch executions");
       return api.executions.list.responses[200].parse(await res.json());
     },
   });
 }
+
 export function useExecution(id: number | null) {
   return useQuery({
     queryKey: [api.executions.get.path, id],
@@ -177,7 +153,7 @@ export function useExecution(id: number | null) {
     queryFn: async () => {
       if (!id) return null;
       const url = buildUrl(api.executions.get.path, { id });
-      const res = await fetch(url, { credentials: "include" });
+      const res = await apiFetch(url);
       if (!res.ok) throw new Error("Failed to fetch execution");
       return api.executions.get.responses[200].parse(await res.json());
     },

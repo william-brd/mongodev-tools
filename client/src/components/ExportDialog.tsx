@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Download } from "lucide-react";
+import { prefixUrl } from "@/lib/queryClient";
 
 interface ExportDialogProps {
   open: boolean;
@@ -32,7 +33,7 @@ export function ExportDialog({ open, onOpenChange, db, col }: ExportDialogProps)
     try {
       const params = new URLSearchParams({ format, filter });
       const res = await fetch(
-        `/api/mongo/databases/${db}/collections/${col}/export?${params}`,
+        prefixUrl(`/api/mongo/databases/${db}/collections/${col}/export?${params}`),
         { credentials: "include" }
       );
       if (!res.ok) {
