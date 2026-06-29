@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { highlight, languages } from "prismjs";
 import "prismjs/themes/prism-tomorrow.css";
 import "prismjs/components/prism-json";
+import { sanitizePrism } from "@/lib/sanitize";
 
 interface ResultViewerProps {
   data: any;
@@ -150,7 +151,7 @@ export function ResultViewer({ data, status, duration }: ResultViewerProps) {
             <pre
               className="text-green-300"
               dangerouslySetInnerHTML={{
-                __html: highlight(displayLines, languages.json, "json"),
+                __html: sanitizePrism(highlight(displayLines, languages.json, "json")),
               }}
             />
           )}

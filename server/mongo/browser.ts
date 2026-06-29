@@ -1,51 +1,25 @@
-import { MongoClient, ObjectId, type Document } from "mongodb";
+import { ObjectId, type Document } from "mongodb";
 import { stringify } from "csv-stringify/sync";
+import { getMongoClient } from "../lib/mongo";
 
-let _client: MongoClient | null = null;
-let _connectPromise: Promise<MongoClient> | null = null;
+// Operadores MongoDB que executam JavaScript no servidor — bloqueados no browser
+const DANGEROUS_OPERATORS = new Set(["$where", "$function", "$accumulator", "$keyf"]);
 
-function isTopologyClosed(err: unknown) {
-  const e = err as { name?: string; message?: string } | null;
-  return (
-    e?.name === "MongoTopologyClosedError" ||
-    e?.message?.includes("Topology is closed")
-  );
-}
-
-export async function getMongoClient(): Promise<MongoClient> {
-  // Docker Stack (env_file) às vezes inclui as aspas como parte do valor.
-  // Ex: MONGO_URL="mongodb://..." → process.env.MONGO_URL = '"mongodb://..."'
-  const raw = process.env.MONGO_URL ?? "";
-  const url = raw.replace(/^["']|["']$/g, "").trim();
-  if (!url) throw new Error("MONGO_URL not set");
-  if (!url.startsWith("mongodb://") && !url.startsWith("mongodb+srv://")) {
-    throw new Error(`MONGO_URL inválida: valor atual = "${url.slice(0, 30)}..." (remova aspas do env_file)`);
-  }
-
-  if (_client) {
-    try {
-      await _client.db("admin").command({ ping: 1 });
-      return _client;
-    } catch (e) {
-      if (!isTopologyClosed(e)) throw e;
-      _client = null;
+function assertSafeFilter(obj: unknown, depth = 0): void {
+  if (depth > 20 || obj === null || typeof obj !== "object") return;
+  for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {
+    if (DANGEROUS_OPERATORS.has(key)) {
+      throw Object.assign(
+        new Error(`Operador "${key}" não é permitido no browser — use o Workbench para queries avançadas`),
+        { status: 400 }
+      );
     }
+    assertSafeFilter(val, depth + 1);
   }
-
-  if (!_connectPromise) {
-    _connectPromise = (async () => {
-      const hasDirectFlag = /directConnection=/i.test(url);
-      const hasReplicaSet = /replicaSet=/i.test(url);
-      const options = hasDirectFlag || hasReplicaSet ? {} : { directConnection: true };
-      const c = new MongoClient(url, options);
-      await c.connect();
-      _client = c;
-      return c;
-    })().finally(() => (_connectPromise = null));
-  }
-
-  return _connectPromise;
 }
+
+const EXPORT_LIMIT = 50_000;
+const IMPORT_LIMIT = 10_000;
 
 function serializeDoc(doc: unknown): unknown {
   if (doc === null || doc === undefined) return doc;
@@ -155,8 +129,9 @@ export async function findDocuments(
 
   try {
     if (safeFilter !== "{}") filter = JSON.parse(safeFilter);
+    assertSafeFilter(filter);
   } catch (e: any) {
-    throw new Error(`Filtro inválido: ${e.message} — valor recebido: ${safeFilter}`);
+    throw e.status ? e : new Error(`Filtro inválido: ${e.message} — valor recebido: ${safeFilter}`);
   }
   try {
     if (safeSort !== "{}") sort = JSON.parse(safeSort);
@@ -189,8 +164,9 @@ export async function countDocuments(
   let q: Document = {};
   try {
     if (filter?.trim() && filter.trim() !== "{}") q = JSON.parse(filter);
-  } catch {
-    throw new Error("Invalid filter JSON");
+    assertSafeFilter(q);
+  } catch (e: any) {
+    throw e.status ? e : new Error("Invalid filter JSON");
   }
   return client.db(dbName).collection(colName).countDocuments(q);
 }
@@ -309,7 +285,7 @@ export async function exportToJson(
   } catch {
     throw new Error("Invalid filter JSON");
   }
-  const docs = await client.db(dbName).collection(colName).find(q).toArray();
+  const docs = await client.db(dbName).collection(colName).find(q).limit(EXPORT_LIMIT).toArray();
   return JSON.stringify(docs.map(serializeDoc), null, 2);
 }
 
@@ -340,7 +316,7 @@ export async function exportToCsv(
   } catch {
     throw new Error("Invalid filter JSON");
   }
-  const docs = await client.db(dbName).collection(colName).find(q).toArray();
+  const docs = await client.db(dbName).collection(colName).find(q).limit(EXPORT_LIMIT).toArray();
   if (docs.length === 0) return "";
 
   const serialized = docs.map((d) => serializeDoc(d) as Record<string, unknown>);
@@ -360,6 +336,12 @@ export async function importDocuments(
   docs: unknown[],
   mode: "insert" | "upsert" = "insert"
 ) {
+  if (docs.length > IMPORT_LIMIT) {
+    throw Object.assign(
+      new Error(`Máximo de ${IMPORT_LIMIT.toLocaleString()} documentos por importação`),
+      { status: 400 }
+    );
+  }
   const client = await getMongoClient();
   const col = client.db(dbName).collection(colName);
   const deserialized = docs.map((d) => deserializeDoc(d) as Document);

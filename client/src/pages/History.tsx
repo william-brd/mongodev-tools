@@ -26,6 +26,7 @@ import { highlight, languages } from "prismjs";
 import "prismjs/themes/prism-tomorrow.css";
 import "prismjs/components/prism-json";
 import "prismjs/components/prism-javascript";
+import { sanitizePrism } from "@/lib/sanitize";
 
 export default function History() {
   const pageSize = 10;
@@ -182,7 +183,7 @@ export default function History() {
                       <pre
                         className="font-mono text-sm text-yellow-200"
                         dangerouslySetInnerHTML={{
-                          __html: highlight(executionDetails.code, languages.javascript, "javascript"),
+                          __html: sanitizePrism(highlight(executionDetails.code, languages.javascript, "javascript")),
                         }}
                       />
                     ) : (
@@ -198,7 +199,7 @@ export default function History() {
                         executionDetails?.status === "error" ? "text-red-400" : "text-green-300"
                       }`}
                       dangerouslySetInnerHTML={{
-                        __html: highlight(executionResultText, languages.json, "json"),
+                        __html: sanitizePrism(highlight(executionResultText, languages.json, "json")),
                       }}
                     />
                   </ScrollArea>

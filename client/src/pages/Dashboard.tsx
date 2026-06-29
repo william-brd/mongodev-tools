@@ -30,7 +30,12 @@ import { useLocation } from "wouter";
 export default function Dashboard() {
   const [location] = useLocation();
   const searchParams = new URLSearchParams(window.location.search);
-  const scriptId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
+  const scriptId = (() => {
+    const raw = searchParams.get("id");
+    if (!raw) return null;
+    const n = parseInt(raw, 10);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  })();
 
   const { data: existingScript, isLoading: isLoadingScript } = useScript(scriptId);
   const { data: databases } = useDatabases();

@@ -71,7 +71,12 @@ export function setupSession(app: Express) {
       store: new MStore({ checkPeriod: 86400000 }),
       resave: false,
       saveUninitialized: false,
-      cookie: { httpOnly: true, maxAge: sessionTtl },
+      cookie: {
+        httpOnly: true,
+        maxAge: sessionTtl,
+        sameSite: "lax",                              // mitiga CSRF; "lax" é compatível com redirects OIDC
+        secure: process.env.NODE_ENV === "production", // HTTPS only em produção
+      },
     })
   );
 }
@@ -155,7 +160,7 @@ export function setupAuthRoutes(app: Express) {
     try {
       const config = await getOidcConfig();
       const { codeVerifier, nonce, state } = req.session;
-      console.log(`[auth] callback — sid=${req.sessionID} codeVerifier=${codeVerifier ? "ok" : "AUSENTE"} cookie=${req.headers.cookie ? "ok" : "AUSENTE"}`);
+      console.log(`[auth] callback — sid=${req.sessionID} codeVerifier=${codeVerifier ? "ok" : "AUSENTE"} hasCookie=${!!req.headers.cookie}`);
       const redirectUri = `${getAppBaseUrl(req)}/api/callback`;
 
       // Monta o currentUrl usando a redirectUri completa como base para preservar
@@ -236,10 +241,12 @@ export function setupAuthRoutes(app: Express) {
 
   app.get("/api/auth/user", (req, res) => {
     if (!req.session.user) {
-      console.warn(`[auth] /api/auth/user — sem sessão (sid=${req.sessionID}, cookie=${req.headers.cookie ? "presente" : "ausente"})`);
+      console.warn(`[auth] /api/auth/user — sem sessão (sid=${req.sessionID}, hasCookie=${!!req.headers.cookie})`);
       return res.status(401).json({ message: "Unauthorized" });
     }
-    res.json(req.session.user);
+    // Nunca expor tokens ao cliente — apenas os campos necessários para a UI
+    const { id, email, firstName, lastName, role, profileImageUrl } = req.session.user;
+    res.json({ id, email, firstName, lastName, role, profileImageUrl });
   });
 }
 

@@ -1,15 +1,42 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
+import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupSession } from "./auth/keycloak";
+import { getMongoClient } from "./lib/mongo";
+
+// Falha rápida: SESSION_SECRET ausente permite forjar cookies de sessão
+if (!process.env.SESSION_SECRET && process.env.NODE_ENV === "production") {
+  console.error("[FATAL] SESSION_SECRET não definida em produção. Defina a variável antes de subir o serviço.");
+  process.exit(1);
+}
+
+// Handlers globais para erros não capturados — garante log e exit limpo
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] uncaughtException:", err.stack ?? err.message);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] unhandledRejection:", reason);
+  process.exit(1);
+});
 
 const app = express();
 const httpServer = createServer(app);
 
 // Necessário para cookies e IP corretos por trás de nginx/proxy reverso
 app.set("trust proxy", 1);
+
+// Headers de segurança HTTP (X-Frame-Options, X-Content-Type-Options, etc.)
+// CSP relaxado para permitir inline scripts/styles do React + Prismjs
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // SPA com Vite/inline styles não tolera CSP estrito sem configuração fina
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 setupSession(app);
 
@@ -83,14 +110,36 @@ app.use((req, res, next) => {
   const { storage } = await import("./storage");
   await (storage as any).init?.();
 
+  // Health check — usado pelo Docker HEALTHCHECK e pelo load balancer
+  app.get("/api/health", async (_req, res) => {
+    const checks: Record<string, string> = {};
+    let healthy = true;
+
+    try {
+      const mc = await getMongoClient();
+      await mc.db("admin").command({ ping: 1 });
+      checks.mongo = "ok";
+    } catch (e: any) {
+      checks.mongo = `error: ${e.message}`;
+      healthy = false;
+    }
+
+    checks.storage = (storage as any)._ready ? "database" : "memory";
+
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? "ok" : "degraded",
+      checks,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
+    console.error("[error]", err.stack ?? err.message);
+    if (!res.headersSent) res.status(status).json({ message });
   });
 
   // importantly only setup vite in development and after

@@ -6,17 +6,21 @@ let client: MongoClient | null = null;
 let connectPromise: Promise<MongoClient> | null = null;
 
 async function createAndConnectClient(url: string) {
-  // directConnection=true evita que o driver tente resolver o hostname
-  // interno do servidor (ex: nome Docker) após o hello/isMaster response.
-  // Pode ser sobrescrito adicionando ?directConnection=false na MONGO_URL.
   const hasDirectFlag = /directConnection=/i.test(url);
   const hasReplicaSet = /replicaSet=/i.test(url);
-  const options = hasDirectFlag || hasReplicaSet ? {} : { directConnection: true };
-  const c = new MongoClient(url, options);
+  const c = new MongoClient(url, {
+    ...(hasDirectFlag || hasReplicaSet ? {} : { directConnection: true }),
+    serverSelectionTimeoutMS: 5_000,
+    connectTimeoutMS: 10_000,
+    socketTimeoutMS: 45_000,
+  });
   await c.connect();
   client = c;
   return c;
 }
+
+// Exportado para que browser.ts reutilize o mesmo singleton (D8)
+export { getClient as getMongoClient };
 
 function isTopologyClosed(error: unknown) {
   const e = error as { message?: string; name?: string } | null;
@@ -384,13 +388,19 @@ export async function executeMongoScript(
       return val;
     };
 
+    const RESULT_DOC_LIMIT = 50_000;
+
     const handleResult = async (res: any): Promise<any> => {
       if (res === null || res === undefined) return res;
       res = safeSerialize(res);
       if (typeof res.toArray === "function") return res.toArray();
       if (typeof res.next === "function" && typeof res.hasNext === "function") {
         const results = [];
-        while (await res.hasNext()) results.push(await res.next());
+        while (await res.hasNext()) {
+          if (results.length >= RESULT_DOC_LIMIT)
+            throw new Error(`Resultado limitado a ${RESULT_DOC_LIMIT.toLocaleString()} documentos — use filtros para reduzir o conjunto`);
+          results.push(await res.next());
+        }
         return results;
       }
       return res;
@@ -403,14 +413,24 @@ export async function executeMongoScript(
       codeToRun = `db.${codeToRun}`;
     }
 
-    const context = vm.createContext({ db: dbProxy, handleResult });
+    // Contexto mínimo: apenas db e handleResult. Object.freeze impede que código
+    // do usuário adicione propriedades ao sandbox e dificulta escapes via prototype.
+    const sandbox = Object.create(null) as Record<string, unknown>;
+    sandbox.db = dbProxy;
+    sandbox.handleResult = handleResult;
+    Object.freeze(sandbox);
+
+    const context = vm.createContext(sandbox);
     const scriptSource =
+      '"use strict";\n' +
       "(async () => { const __result = await (async () => (" +
       codeToRun +
       "))(); return await handleResult(__result); })()";
 
     const script = new vm.Script(scriptSource, { filename: "mongo-script.js" });
-    return await script.runInContext(context);
+    // timeout: impede loops infinitos (10s). runInContext retorna a Promise;
+    // o timeout aplica-se à compilação + início da execução síncrona.
+    return await script.runInContext(context, { timeout: 10_000 });
   } catch (error: any) {
     console.error("Mongo execution error:", error);
     throw new Error(error.message);

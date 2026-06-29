@@ -17,6 +17,8 @@ export interface IStorage {
   logExecution(execution: InsertExecution): Promise<Execution>;
 }
 
+const MEMORY_EXEC_LIMIT = 5_000;
+
 export class MemoryStorage implements IStorage {
   private scripts: Script[] = [];
   private executions: Execution[] = [];
@@ -84,6 +86,10 @@ export class MemoryStorage implements IStorage {
       executedBy: data.executedBy ?? null,
     };
     this.executions.push(execution);
+    // Descarta as mais antigas para evitar leak de memória
+    if (this.executions.length > MEMORY_EXEC_LIMIT) {
+      this.executions = this.executions.slice(-MEMORY_EXEC_LIMIT);
+    }
     return execution;
   }
 }
@@ -121,9 +127,12 @@ export class DatabaseStorage implements IStorage {
     }
 
     try {
-      await AppDataSource.initialize();
+      const withTimeout = <T>(p: Promise<T>, ms: number, label: string): Promise<T> =>
+        Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${label} timeout (${ms}ms)`)), ms))]);
+
+      await withTimeout(AppDataSource.initialize(), 30_000, "DB initialize");
       await this._ensureSchema();
-      await AppDataSource.synchronize();
+      await withTimeout(AppDataSource.synchronize(), 60_000, "DB synchronize");
       this._ready = true;
       console.log(`[storage] conectado — vendor: ${vendor}, schema: ${schema}`);
     } catch (e: any) {

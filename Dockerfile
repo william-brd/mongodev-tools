@@ -24,10 +24,18 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 
+# curl necessário para o HEALTHCHECK
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 # Copia apenas os artefatos prontos — sem rodar npm no runtime
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
 EXPOSE 5000
+
+# Docker Swarm usa este healthcheck para decidir se o container está pronto.
+# --start-period=20s dá tempo para o TypeORM conectar e sincronizar antes do primeiro check.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD curl -sf http://localhost:5000/api/health || exit 1
 
 CMD ["sh", "-c", "NODE_ENV=production node dist/index.cjs"]
